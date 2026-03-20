@@ -1,0 +1,11 @@
+CREATE TABLE sensor_readings (
+    time      TIMESTAMPTZ NOT NULL,
+    sensor_id UUID NOT NULL,
+    value     NUMERIC NOT NULL
+);
+
+SELECT create_hypertable('sensor_readings', 'time',
+    chunk_time_interval => INTERVAL '7 days');
+
+CREATE INDEX idx_sensor_readings_sensor_time
+ON sensor_readings(sensor_id, time DESC);
