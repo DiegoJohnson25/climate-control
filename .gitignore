@@ -1,0 +1,20 @@
+# Binaries
+/api-service/api-service
+/device-service/device-service
+/simulator/simulator
+
+# Catch any binary built to the repo root or elsewhere
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Environment and secrets
+.env
+
+# VS Code
+.vscode/
+
+# Personal reference docs
+/notes/
