@@ -1,0 +1,15 @@
+services:
+  api-service:
+    build:
+      context: .
+      dockerfile: api-service/Dockerfile
+
+  device-service:
+    build:
+      context: .
+      dockerfile: device-service/Dockerfile
+
+  simulator-service:
+    build:
+      context: .
+      dockerfile: simulator-service/Dockerfile
