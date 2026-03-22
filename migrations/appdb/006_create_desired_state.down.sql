@@ -1,5 +1,0 @@
-BEGIN;
-
-DROP TABLE IF EXISTS desired_state;
-
-COMMIT;

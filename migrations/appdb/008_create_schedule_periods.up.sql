@@ -7,13 +7,13 @@ CREATE TABLE schedule_periods (
     days_of_week    INTEGER[] NOT NULL,
     start_time      TIME NOT NULL,
     end_time        TIME NOT NULL,
-    mode            TEXT NOT NULL CHECK (mode IN ('OFF', 'AUTO')),
+    mode            TEXT NOT NULL DEFAULT 'OFF' CHECK (mode IN ('OFF', 'AUTO')),
     target_temp     NUMERIC(5,2) CHECK (target_temp BETWEEN 5 AND 40),
-    target_humidity NUMERIC(5,2) CHECK (target_humidity BETWEEN 0 AND 100),
+    target_hum      NUMERIC(5,2) CHECK (target_hum BETWEEN 0 AND 100),
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CHECK (end_time > start_time),
-    CHECK (mode = 'OFF' OR target_temp IS NOT NULL OR target_humidity IS NOT NULL),
+    CHECK (mode = 'OFF' OR target_temp IS NOT NULL OR target_hum IS NOT NULL),
     CHECK (array_length(days_of_week, 1) > 0)
 );
 
