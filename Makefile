@@ -86,3 +86,8 @@ shell-redis:
 
 ps:
 	$(COMPOSE_ALL) ps
+
+# ── Build ────────────────────────────────────────────────────────────────────
+
+build-api:
+	docker build -f api-service/Dockerfile -t api-service $(CURDIR)
