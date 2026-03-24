@@ -17,6 +17,12 @@ services:
       - JWT_ACCESS_TTL_MINUTES=${JWT_ACCESS_TTL_MINUTES}
       - JWT_REFRESH_TTL_DAYS=${JWT_REFRESH_TTL_DAYS}
       - API_PORT=${API_PORT}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:${API_PORT}/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
     depends_on:
       postgres:
         condition: service_healthy

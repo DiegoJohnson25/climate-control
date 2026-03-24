@@ -2,11 +2,14 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 
 	"github.com/DiegoJohnson25/climate-control/api-service/internal/config"
+	"github.com/DiegoJohnson25/climate-control/api-service/internal/handlers"
 	"github.com/DiegoJohnson25/climate-control/api-service/internal/initializers"
 	"github.com/DiegoJohnson25/climate-control/shared/database"
+	"github.com/gin-gonic/gin"
 )
 
 func main() {
@@ -29,5 +32,9 @@ func main() {
 	if err := rdb.Ping(ctx).Err(); err != nil {
 		log.Fatalf("failed to connect to redis: %v", err)
 	}
+
+	r := gin.Default()
+	r.GET("/health", handlers.HealthCheck)
+	r.Run(fmt.Sprintf(":%d", cfg.APIPort))
 
 }
