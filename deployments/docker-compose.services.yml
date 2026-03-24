@@ -3,21 +3,27 @@ services:
     build:
       context: .
       dockerfile: api-service/Dockerfile
+    ports:
+      - "${API_PORT}:${API_PORT}"
     environment:
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=${POSTGRES_DB}
-      - POSTGRES_PORT=${POSTGRES_PORT}
       - TIMESCALE_USER=${TIMESCALE_USER}
       - TIMESCALE_PASSWORD=${TIMESCALE_PASSWORD}
       - TIMESCALE_DB=${TIMESCALE_DB}
-      - TIMESCALE_PORT=${TIMESCALE_PORT}
       - REDIS_PASSWORD=${REDIS_PASSWORD}
-      - REDIS_PORT=${REDIS_PORT}
       - JWT_SECRET=${JWT_SECRET}
       - JWT_ACCESS_TTL_MINUTES=${JWT_ACCESS_TTL_MINUTES}
       - JWT_REFRESH_TTL_DAYS=${JWT_REFRESH_TTL_DAYS}
       - API_PORT=${API_PORT}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      timescaledb:
+        condition: service_healthy
 
   device-service:
     build:
