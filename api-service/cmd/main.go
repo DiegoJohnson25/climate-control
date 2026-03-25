@@ -6,7 +6,7 @@ import (
 	"log"
 
 	"github.com/DiegoJohnson25/climate-control/api-service/internal/config"
-	"github.com/DiegoJohnson25/climate-control/api-service/internal/handlers"
+	"github.com/DiegoJohnson25/climate-control/api-service/internal/health"
 	"github.com/DiegoJohnson25/climate-control/api-service/internal/initializers"
 	"github.com/DiegoJohnson25/climate-control/shared/database"
 	"github.com/gin-gonic/gin"
@@ -34,7 +34,7 @@ func main() {
 	}
 
 	r := gin.Default()
-	r.GET("/health", handlers.HealthCheck)
+	r.GET("/health", health.Check)
 	r.Run(fmt.Sprintf(":%d", cfg.APIPort))
 
 }
