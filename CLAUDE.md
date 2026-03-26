@@ -1,10 +1,4 @@
-# CLAUDE.md — Climate Control Project
-
-This file is the authoritative reference for Claude Code working in this repository.
-Read it fully before writing any code. All architectural decisions documented here
-are final unless explicitly revisited.
-
----
+# Climate Control Project — Context Handoff
 
 ## Project overview
 
@@ -15,18 +9,51 @@ service.
 
 ---
 
-## Repo structure
+## Current state
+
+**Completed:**
+- Phase 1 ✅ — repo scaffold, Docker Compose infrastructure, full DB schema migrated
+- `feat/api-service-scaffold` ✅ — merged to main
+
+**Active branch:** `feat/api-service-auth`
+
+**Last thing actually done:** Health check endpoint working in the new domain-first
+repo structure. User repository written. About to start the auth service layer.
+
+---
+
+## Repo structure (domain-first — decided and locked in)
 
 ```
 climate-control/
 ├── api-service/
-│   ├── cmd/main.go
+│   ├── cmd/
+│   │   └── main.go
 │   ├── internal/
+│   │   ├── user/
+│   │   │   ├── handler.go        # POST /auth/register, GET /users/me
+│   │   │   ├── service.go        # registration, password hashing
+│   │   │   ├── repository.go     # GORM — users table
+│   │   │   └── errors.go
 │   │   ├── auth/
-│   │   ├── handlers/
-│   │   ├── middleware/
-│   │   ├── models/
-│   │   └── repository/
+│   │   │   ├── handler.go        # POST /auth/login, /auth/refresh, /auth/logout
+│   │   │   ├── middleware.go     # JWT validation middleware
+│   │   │   ├── service.go        # login, refresh rotation, logout
+│   │   │   ├── repository.go     # Redis — refresh token storage
+│   │   │   └── errors.go
+│   │   ├── room/
+│   │   │   ├── handler.go
+│   │   │   ├── service.go
+│   │   │   ├── repository.go
+│   │   │   └── errors.go
+│   │   ├── router/
+│   │   │   └── router.go         # route registration, middleware chain
+│   │   ├── health/
+│   │   │   └── health.go         # plain function, no struct
+│   │   ├── config/
+│   │   │   └── config.go         # typed config struct, Load() function
+│   │   └── initializers/
+│   │       └── redis.go          # Redis connection init
 │   ├── Dockerfile
 │   └── go.mod
 ├── device-service/
@@ -47,8 +74,18 @@ climate-control/
 │   ├── Dockerfile
 │   └── go.mod
 ├── shared/
-│   ├── models/       # GORM structs — schema contract for both services
-│   └── config/       # Typed config struct loaded from env
+│   ├── models/           # GORM structs — schema contract for both services
+│   │   ├── user.go
+│   │   ├── room.go
+│   │   ├── device.go
+│   │   ├── sensor.go
+│   │   ├── actuator.go
+│   │   ├── desired_state.go
+│   │   ├── schedule.go
+│   │   └── schedule_period.go
+│   └── db/
+│       ├── postgres.go   # GORM appdb connection
+│       └── timescale.go  # pgx TimescaleDB connection pool
 ├── firmware/
 │   └── esp32/
 ├── deployments/
@@ -67,9 +104,10 @@ climate-control/
 │   └── postman/
 │       ├── climate-control.postman_collection.json
 │       └── climate-control.postman_environment.json
-├── docker-compose.yml       # Infrastructure only — postgres, timescaledb, redis, mosquitto
-├── go.work                  # Workspace linking all three service modules + shared
-├── .env                     # Never committed — see .env.example
+├── docker-compose.yml
+├── go.work
+├── Makefile
+├── .env
 ├── .env.example
 ├── .gitignore
 ├── README.md
@@ -81,15 +119,15 @@ climate-control/
 
 ---
 
-## Go module structure
+## Package naming rules (locked in)
 
-- Each service (`api-service`, `device-service`, `simulator-service`) has its own
-  `go.mod` — they are independent modules with separate dependency graphs
-- `shared/` is a fourth module imported by both services
-- `go.work` at repo root links all four for local development
-- Module paths follow `github.com/<owner>/climate-control/<service>`
-- Docker builds do NOT use `go.work` — each Dockerfile must `COPY shared/` and
-  the relevant service directory into the build context explicitly
+- Package name is the domain: `user`, `auth`, `room`
+- File name encodes the layer: `handler.go`, `service.go`, `repository.go`
+- Types drop the domain prefix: `auth.Service` not `auth.AuthService`
+- Constructors keep the layer name: `auth.NewService`, `auth.NewHandler`, `auth.NewRedisRepository`
+- Health check is a plain function — `r.GET("/health", health.Check)`
+- File names are snake_case, no suffix (e.g. `handler.go` not `user_handler.go`)
+- Package/folder names are singular — `service` not `services`, `handler` not `handlers`
 
 ---
 
@@ -97,21 +135,20 @@ climate-control/
 
 | Layer | Technology | Notes |
 |---|---|---|
-| Language | Go | |
+| Language | Go 1.25.0 | |
 | HTTP framework | Gin | `api-service` only |
-| ORM | GORM | App DB only (`api-service`) |
-| Time-series queries | pgx raw SQL | TimescaleDB — `time_bucket`, `LATERAL` etc. |
-| Auth | JWT | Short-lived access tokens + Redis-backed refresh token rotation |
-| Rate limiting | Redis | `api-service` only |
+| ORM | GORM | App DB only |
+| Time-series queries | pgx raw SQL | TimescaleDB |
+| Auth | JWT | golang-jwt library |
+| Refresh tokens | Redis | go-redis/v9 |
+| Rate limiting | Redis | Applied at router level |
 | MQTT client | Eclipse Paho Go | `device-service` and `simulator-service` only |
 | Broker | Mosquitto | |
-| App DB | PostgreSQL 17 | port 5433 locally (5432 conflicts with native WSL postgres) |
-| Time-series DB | TimescaleDB 2.25.2-pg17 | port 5434 locally, separate container |
-| Control loop cache | In-process memory | NOT Redis — zero latency on hot path |
+| App DB | PostgreSQL 17 | Internal port 5432, host port 5433 |
+| Time-series DB | TimescaleDB 2.25.2-pg17 | Internal port 5432, host port 5434 |
+| Cache | In-process memory | `device-service` control loop only |
 | Migrations | golang-migrate | Auto-run on `docker compose up` |
 | Containers | Docker Compose | |
-| Reverse proxy | NGINX | Later phase — not yet implemented |
-| CI | GitHub Actions | Planned |
 
 ---
 
@@ -136,11 +173,11 @@ REDIS_PORT=6379
 
 # Mosquitto
 MQTT_PORT=1883
-MQTT_DEVICE_SERVICE_PASSWORD=changeme
-MQTT_DEVICE_PASSWORD=changeme
+MQTT_DEVICE_SERVICE_PASSWORD=localdev
+MQTT_DEVICE_PASSWORD=localdev
 
 # JWT
-JWT_SECRET=changeme-replace-with-32-plus-chars-in-prod
+JWT_SECRET=localdev-replace-with-32-plus-chars-in-prod
 JWT_ACCESS_TTL_MINUTES=15
 JWT_REFRESH_TTL_DAYS=7
 
@@ -152,14 +189,48 @@ SIMULATOR_EMAIL=simulator@local.dev
 SIMULATOR_PASSWORD=localdev
 ```
 
-Config is loaded once at startup into a typed struct in `shared/config/`. Never
-call `os.Getenv` scattered throughout service code — always use the config struct.
+**Important:** Internal Docker port for both postgres and timescaledb is `5432`
+regardless of host-mapped ports. Connection strings inside Docker always use
+`port=5432`, `host=postgres`, `host=timescaledb`, `host=redis`.
 
 ---
 
-## Database schema
+## Config struct (api-service/internal/config/config.go)
 
-### appdb (PostgreSQL 17)
+```go
+type Config struct {
+    PostgresUser     string
+    PostgresPassword string
+    PostgresDB       string
+    PostgresPort     int       // host port only — not used in DSN inside Docker
+
+    TimescaleUser     string
+    TimescalePassword string
+    TimescaleDB       string
+    TimescalePort     int
+
+    RedisPassword string
+    RedisPort     int
+
+    JWTSecret           string
+    JWTAccessTTLMinutes int
+    JWTRefreshTTLDays   int
+
+    APIPort int
+
+    SimulatorEmail    string
+    SimulatorPassword string
+}
+```
+
+- Loaded once in `main.go` via `config.Load()`
+- `mustInt(name, value)` panics with variable name (not value) on bad input
+- JWT TTL constants could be hardcoded — kept as env vars for flexibility
+- Config struct passed down field-by-field to components, never the whole struct
+
+---
+
+## Database schema — appdb (PostgreSQL 17)
 
 ```sql
 CREATE TABLE users (
@@ -176,7 +247,7 @@ CREATE TABLE rooms (
     user_id           UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     name              TEXT NOT NULL,
     deadband_temp     NUMERIC(5,2) NOT NULL DEFAULT 1.0 CHECK (deadband_temp > 0),
-    deadband_humidity NUMERIC(5,2) NOT NULL DEFAULT 5.0 CHECK (deadband_humidity > 0),
+    deadband_hum      NUMERIC(5,2) NOT NULL DEFAULT 5.0 CHECK (deadband_hum > 0),
     created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE(user_id, name)
@@ -210,7 +281,7 @@ CREATE TABLE actuators (
     UNIQUE(device_id, actuator_type)
 );
 
-CREATE TABLE desired_state (
+CREATE TABLE desired_states (
     id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     room_id               UUID NOT NULL REFERENCES rooms(id) ON DELETE CASCADE UNIQUE,
     mode                  TEXT NOT NULL DEFAULT 'OFF' CHECK (mode IN ('OFF', 'AUTO')),
@@ -231,7 +302,6 @@ CREATE TABLE schedules (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Only one active schedule per room at a time
 CREATE UNIQUE INDEX one_active_schedule_per_room
 ON schedules(room_id) WHERE is_active = true;
 
@@ -242,7 +312,7 @@ CREATE TABLE schedule_periods (
     days_of_week    INTEGER[] NOT NULL,
     start_time      TIME NOT NULL,
     end_time        TIME NOT NULL,
-    mode            TEXT NOT NULL CHECK (mode IN ('OFF', 'AUTO')),
+    mode            TEXT NOT NULL DEFAULT 'AUTO' CHECK (mode IN ('OFF', 'AUTO')),
     target_temp     NUMERIC(5,2) CHECK (target_temp BETWEEN 5 AND 40),
     target_humidity NUMERIC(5,2) CHECK (target_humidity BETWEEN 0 AND 100),
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -253,7 +323,7 @@ CREATE TABLE schedule_periods (
 );
 ```
 
-### metricsdb (TimescaleDB 2.25.2-pg17)
+### metricsdb (TimescaleDB)
 
 ```sql
 CREATE TABLE sensor_readings (
@@ -262,170 +332,104 @@ CREATE TABLE sensor_readings (
     value     NUMERIC NOT NULL
 );
 
-SELECT create_hypertable('sensor_readings', 'time',
-    chunk_time_interval => INTERVAL '7 days');
-
--- Column order matters: sensor_id first for equality filter, time DESC for latest-first scan
-CREATE INDEX idx_sensor_readings_sensor_time
-ON sensor_readings(sensor_id, time DESC);
+SELECT create_hypertable('sensor_readings', 'time', chunk_time_interval => INTERVAL '7 days');
+CREATE INDEX idx_sensor_readings_sensor_time ON sensor_readings(sensor_id, time DESC);
 ```
 
-`sensor_readings.sensor_id` has **no FK constraint**. Cross-server FK constraints
-are impossible — `sensors` lives in appdb, `sensor_readings` lives in metricsdb.
-Referential integrity is enforced by `device-service` only writing sensor IDs
-sourced from its appdb sensor cache.
+---
+
+## GORM model conventions
+
+- `ID uuid.UUID \`gorm:"type:uuid;primaryKey;default:gen_random_uuid()"\``
+- Foreign key UUIDs: `UserID uuid.UUID \`gorm:"type:uuid"\``
+- Nullable foreign keys: `RoomID *uuid.UUID \`gorm:"type:uuid"\``
+- Nullable values: pointer types (`*float64`, `*string`, `*time.Time`)
+- `CreatedAt`, `UpdatedAt` — `time.Time`, managed automatically by GORM
+- String defaults: `\`gorm:"default:UTC"\``
+- Numeric defaults: `\`gorm:"default:1.0"\``
+- `HwID` needs explicit tag: `\`gorm:"column:hw_id"\``
+- `days_of_week` uses `pq.Int64Array \`gorm:"type:integer[]"\``
+- No constraint tags (`uniqueIndex`, `check`, `not null`) — migrations handle all constraints
+- `desired_states` table name set via `TableName()` method (was originally `desired_state`, renamed to plural for consistency)
+- GORM used for appdb only — TimescaleDB uses raw pgx
 
 ---
 
-## Architecture
+## Auth architecture
 
-### Two-service split
-
-| Service | Faces | Protocol | Responsibilities |
-|---|---|---|---|
-| `api-service` | Human clients | HTTP/REST | CRUD — rooms, devices, schedules, users. JWT auth. Writes `desired_state` to DB. **Never touches MQTT.** |
-| `device-service` | ESP32 / simulator | MQTT | Subscribes to telemetry, writes sensor readings to TimescaleDB, runs control loop, publishes actuator commands. Reads `desired_state` from DB via cache. |
-
-### MQTT conventions
-
-- Telemetry topic: `devices/{device_id}/telemetry` — QoS 1 (at least once)
-- Command topic: `devices/{device_id}/cmd` — QoS 2 (exactly once)
-- Payloads: JSON
-- Only `device-service`, `simulator-service`, and ESP32 devices connect to Mosquitto
-- `api-service` never connects to MQTT under any circumstances
-
-### Layering conventions
-
-| Package | Responsibility |
-|---|---|
-| `handlers/` | HTTP concerns only — parse request, validate input, call service, write response |
-| `service/` | Business logic — orchestrates repository calls, enforces rules |
-| `repository/` | Data access only — all DB queries live here, nothing else |
-| `models/` | Structs only — no methods with business logic |
-| `middleware/` | JWT validation, rate limiting, request logging |
-
-**Chain is always:** `handlers → service → repository`. Handlers never call
-repositories directly.
-
----
-
-## Control loop (device-service)
-
-### Overview
-
-Event-driven — triggered by incoming MQTT telemetry messages, not polling.
-
-### In-memory cache (hot path)
+`auth` imports `user` — one directional. `user` knows nothing about `auth`.
 
 ```go
-type RoomCache struct {
-    DeadbandTemp     float64
-    DeadbandHumidity float64
-    DesiredState     DesiredState
-    ActivePeriods    []SchedulePeriod
-    UserTimezone     string
-    ActuatorStates   map[string]bool  // actuator_type → on/off, never persisted
-    LastActivePeriod *SchedulePeriod
-    LastPeriodEndTime time.Time
+// auth/service.go
+type service struct {
+    users user.Repository  // looks up user by email for login
+    tokens Repository      // Redis refresh token storage
 }
 ```
 
-Cache is invalidated via Postgres `LISTEN/NOTIFY` when `api-service` writes to
-`desired_state`, `schedules`, `schedule_periods`, or `rooms`. Triggers are written
-alongside `device-service` implementation — not before.
+Wiring in `main.go`:
+```go
+userRepo    := user.NewPostgresRepository(db)
+userSvc     := user.NewService(userRepo)
+authRepo    := auth.NewRedisRepository(rdb)
+authSvc     := auth.NewService(userRepo, authRepo)  // takes userRepo directly
 
-**Never query the DB on the control loop hot path.** All reads are from cache.
-
-### Bang-bang control with hysteresis
-
-Unidirectional actuators only (heater adds heat, humidifier adds humidity).
-No active cooling or dehumidification.
-
-```
-current_value = avg(all sensors of this type in room)
-
-if current_value < target - deadband  →  command actuator ON
-if current_value > target + deadband  →  command actuator OFF
-else (in band)                        →  hold current state (hysteresis)
+userHandler := user.NewHandler(userSvc)
+authHandler := auth.NewHandler(authSvc)
 ```
 
-### Command publishing rules
+### JWT design
+- Access tokens: short-lived JWT (15 min), signed with `JWT_SECRET`
+- Refresh tokens: opaque token stored in Redis with TTL (7 days)
+- Rotation: every `/auth/refresh` invalidates old token, issues new pair
+- Claims: standard `exp` + `user_id`
+- Logout: deletes refresh token from Redis
 
-| Condition | Behaviour |
+### Redis data model for refresh tokens
+- Key: the refresh token string itself
+- Value: user ID
+- TTL: `JWT_REFRESH_TTL_DAYS`
+
+---
+
+## Layering conventions
+
+| Layer | Responsibility |
 |---|---|
-| `mode = AUTO`, target NOT NULL | Publish explicit ON/OFF at boundaries |
-| `mode = AUTO`, target NULL | Publish nothing for that actuator type |
-| `mode = OFF` | Publish nothing — ESP32 failsafe timeout handles physical off |
+| `handler.go` | HTTP only — parse request, validate input, call service, write response |
+| `service.go` | Business logic — orchestrate repository calls, enforce rules |
+| `repository.go` | Data access only — all DB/Redis queries live here |
+| `errors.go` | Sentinel errors for the domain |
+| `middleware.go` | JWT validation, injects user ID into Gin context |
 
-### Actuator state
+**Chain:** `handler → service → repository`. Handlers never call repositories directly.
 
-Not persisted to DB. Lives exclusively in `device-service` in-memory cache.
-Initialises to OFF on startup. Self-corrects on first telemetry batch.
-
-Known edge case: if `device-service` restarts while an actuator is ON and the room
-value is in the deadband, the actuator times out on the ESP32 side and turns off.
-Self-corrects when value crosses the lower boundary. Acceptable for a home system.
-
-### Schedule evaluation (runs on each telemetry message)
-
-```
-1. Check manual_override_until:
-   - Still active  →  use current desired_state, skip schedule evaluation
-   - Just expired  →  clear it, write to DB, fall through
-   - NULL          →  fall through
-
-2. Find active period from cache (pure in-memory):
-   - Get current day (ISO: Mon=1, Sun=7) and time in user's timezone
-   - Scan periods for matching day and time window
-
-3. Apply grace period (~60s) if no active period found near a boundary
-
-4. If active period differs from current desired_state  →  write to DB
-
-5. Run bang-bang logic against current desired_state
-
-6. Publish command if actuator state should change
+**Sentinel errors** defined per domain, translated to HTTP status codes in handlers:
+```go
+var (
+    ErrEmailTaken         = errors.New("email already taken")
+    ErrInvalidCredentials = errors.New("invalid credentials")
+)
 ```
 
-### Schedule midnight crossing
+**Interfaces:** Not used yet — concrete types used directly. Will be added when
+tests are written in Phase 5. The refactor is mechanical at that point.
 
-Periods cannot cross midnight (`CHECK end_time > start_time` at DB level).
-The API **transparently splits** a midnight-crossing period into two on behalf of
-the user:
-
-- Period A: original days, `start_time` to `23:59`
-- Period B: days shifted +1, `00:00` to `end_time`
-- `days_of_week = [7]` (Sunday) wraps to `[1]` (Monday) for Period B
-
-### Schedule activation
-
-Atomically deactivates any existing active schedule for the room in the same
-transaction:
-
-```sql
-BEGIN;
-  UPDATE schedules SET is_active = false WHERE room_id = $1 AND is_active = true;
-  UPDATE schedules SET is_active = true  WHERE id = $2;
-COMMIT;
+**Constructors return concrete types for now:**
+```go
+func NewService(users *user.Repository, tokens *RedisRepository) *Service
+func NewHandler(svc *Service) *Handler
 ```
-
-### Stale device monitoring
-
-Lightweight goroutine in `device-service`. Every 60 seconds, scan live state
-cache for devices that haven't reported in over 5 minutes. Log a warning.
-Observability only — does not write `desired_state` or publish commands.
 
 ---
 
 ## REST API endpoints
 
-All endpoints except auth require `Authorization: Bearer <access_token>`.
-All responses are JSON. All timestamps UTC.
-
 ```
 POST   /api/v1/auth/register
 POST   /api/v1/auth/login
 POST   /api/v1/auth/refresh
+POST   /api/v1/auth/logout
 
 GET    /api/v1/rooms
 POST   /api/v1/rooms
@@ -455,197 +459,184 @@ PUT    /api/v1/schedule-periods/:id
 DELETE /api/v1/schedule-periods/:id
 ```
 
----
-
-## Auth design
-
-- Access tokens: short-lived JWT (default 15 min), signed with `JWT_SECRET`
-- Refresh tokens: opaque token stored as a key in Redis with TTL (default 7 days)
-- Refresh token rotation: each `/auth/refresh` call invalidates the old token and
-  issues a new one — prevents replay attacks
-- Rate limiting via Redis on auth endpoints and globally per user
-
----
-
-## Business logic rules
-
-### desired_state
-
-- Every room **always** has exactly one `desired_state` row — created in the same
-  transaction as the room, never deleted independently
-- `mode = OFF` is an explicit valid state, not the absence of one
-- `api-service` writes `desired_state` when user makes a direct control request —
-  sets `manual_override_until`
-- `device-service` writes `desired_state` when a schedule period transitions —
-  does NOT set `manual_override_until`
-- `manual_override_until = NULL` means the scheduler controls the room
-- `manual_override_until` in the future means user override is active
-
-### Validation rules for desired_state and schedule_periods
-
-- `mode = AUTO` + `target_temp NOT NULL` → room must have a `temperature` sensor
-  AND a `heater` actuator
-- `mode = AUTO` + `target_humidity NOT NULL` → room must have a `humidity` sensor
-  AND a `humidifier` actuator
-- `mode = AUTO` + both targets NULL → reject — use `OFF` instead
-- `mode = OFF` → always valid regardless of room configuration
-
-### Schedule period overlap
-
-Rejected at the API layer. Overlap check:
-
-```
-new_start < existing_end AND new_end > existing_start
-```
-
-Applied per-day — only periods sharing at least one day in `days_of_week` need
-to be checked.
-
-### Device deletion edge case
-
-When a device is deleted, check whether the room still has the sensors and
-actuators required to support the current `desired_state` and active
-`schedule_periods`. Clear orphaned targets if not. **Document as TODO in the
-device deletion handler** — not yet implemented.
-
-### Rooms are user-scoped
-
-Rooms belong to a single user. Cross-user room conflicts are impossible by design.
-All room queries must filter by `user_id` from the JWT claims.
-
----
-
-## Measurement unit conventions
-
-Enforced by convention, not a DB column:
-
-| Measurement type | Unit |
-|---|---|
-| `temperature` | Degrees Celsius |
-| `humidity` | Percent relative humidity (0–100) |
-| `air_quality` | PPM (parts per million) |
-
----
-
-## Days of week convention
-
-ISO 8601: Monday = 1, Sunday = 7.
-Go's `time.Weekday()` uses Sunday = 0 — **must convert explicitly**.
-Write a test case specifically for Sunday boundary behaviour.
-
----
-
-## TimescaleDB query patterns
-
-Use `LATERAL` join for "latest reading per sensor" — this is the primary hot-path
-query pattern:
-
-```sql
-SELECT s.id, s.measurement_type, lr.value, lr.time
-FROM sensors s
-CROSS JOIN LATERAL (
-    SELECT value, time
-    FROM sensor_readings
-    WHERE sensor_id = s.id
-    ORDER BY time DESC
-    LIMIT 1
-) lr
-WHERE s.device_id = ANY($1);
-```
-
-Use raw `pgx` for all TimescaleDB queries — not GORM.
-Composite index column order `(sensor_id, time DESC)` is intentional — equality
-filter on `sensor_id` first, then scan `time DESC` for the latest value.
-
----
-
-## Simulator service
-
-On startup, the simulator:
-
-1. Registers a user using `SIMULATOR_EMAIL` / `SIMULATOR_PASSWORD` from env (or
-   logs in if already exists)
-2. POSTs rooms via the REST API
-3. POSTs devices into those rooms
-4. Begins publishing MQTT telemetry for each registered device using the `hw_id`
-   received from the API
-
-The simulator uses `device_type = 'simulator'` when registering devices.
-
-Future scope (not yet implemented): configurable scenario file (JSON/YAML) defining
-room count, device count per room, sensor types, and simulated reading profiles
-(stable, drifting, oscillating, heating/cooling curves).
+All endpoints except auth require `Authorization: Bearer <access_token>`.
+All responses JSON. All timestamps UTC.
 
 ---
 
 ## Architectural rules (non-negotiable)
 
-1. `api-service` **never** connects to MQTT
-2. `device-service` **never** exposes HTTP endpoints (except optional internal `/health`)
-3. Shared models are the schema contract — both services import from `shared/models`,
-   never duplicate structs
-4. Handlers never call repositories directly — chain is `handlers → service → repository`
-5. Control loop never queries DB on hot path — reads from in-memory cache only
-6. `desired_state` is never nil — every room always has a row, even if `mode = OFF`
-7. All timestamps UTC — no timezone conversion on the backend, client's responsibility
+1. `api-service` never connects to MQTT
+2. `device-service` never exposes HTTP endpoints (except optional `/health`)
+3. Shared models are the schema contract — both services import from `shared/models`
+4. Handlers never call repositories directly — always through service
+5. No business logic in handlers — HTTP concerns only
+6. `desired_states` is never nil — every room always has a row, even if `mode = OFF`
+7. All timestamps UTC — no timezone conversion on backend
 8. Actuator state never persisted — lives in `device-service` in-memory cache only
-9. Deadbands live on `rooms`, not `desired_state` — they are room configuration,
-   not target setpoints
-10. Schedule timezone comes from `users.timezone` — no per-schedule timezone column
+9. Deadbands live on `rooms` — room configuration, not target setpoints
+10. Schedule timezone comes from `users.timezone` — no per-schedule timezone
 11. `sensor_readings.sensor_id` has no FK — integrity enforced by `device-service`
 12. `OFF` mode publishes nothing — ESP32 failsafe handles physical off state
-13. One active schedule per room — partial unique index enforces this at DB level
-14. Schedule period overlap rejected at API layer — not left to DB constraints
-15. Primary keys are always named `id`, never `table_name_id`
-16. Config loaded once at startup into typed struct — never call `os.Getenv` in
-    business logic
-17. GORM for appdb only — all TimescaleDB queries use raw `pgx`
-18. Room creation and `desired_state` row creation happen in the same transaction
+13. One active schedule per room — partial unique index enforces at DB level
+14. Schedule period overlap rejected at API layer
+15. Primary keys always named `id`
+16. Config loaded once at startup — never call `os.Getenv` in business logic
+17. GORM for appdb only — all TimescaleDB queries use raw pgx
+18. Room creation and `desired_states` row creation in the same transaction
+19. Rate limiting applied at router level, not inside handlers
+20. Never log config values — log variable names only on panic
 
 ---
 
-## Docker Compose notes
+## Business logic rules
 
-- `docker-compose.yml` at repo root is infrastructure only (postgres, timescaledb,
-  redis, mosquitto, golang-migrate runners)
-- `deployments/docker-compose.services.yml` adds application services (api-service,
-  device-service, simulator-service) as an overlay
-- `docker-compose.yml` must always be the first `-f` argument so `.env` is resolved
-  from the repo root
-- Postgres on port 5433, TimescaleDB on port 5434 — offset from 5432 to avoid
-  conflict with native WSL PostgreSQL instance
-- `go.work` is not used inside Docker — each service Dockerfile copies `shared/`
-  explicitly into the build context
+### desired_states
+- Every room always has exactly one row — created in same transaction as room
+- `api-service` writes when user makes direct control request — sets `manual_override_until`
+- `device-service` writes on schedule period transition — does NOT set `manual_override_until`
+- `manual_override_until = NULL` means scheduler controls the room
+
+### Validation for desired_states and schedule_periods
+- `mode = AUTO` + `target_temp NOT NULL` → room must have temperature sensor + heater
+- `mode = AUTO` + `target_humidity NOT NULL` → room must have humidity sensor + humidifier
+- `mode = AUTO` + both targets NULL → reject, use `OFF`
+- `mode = OFF` → always valid
+
+### Schedule period overlap
+Rejected at API layer. Check: `new_start < existing_end AND new_end > existing_start`
+Per-day — only periods sharing at least one day need checking.
+
+### Schedule midnight crossing
+API transparently splits into two periods:
+- Period A: original days, `start_time` to `23:59`
+- Period B: days +1, `00:00` to `end_time`
+- Sunday (7) wraps to Monday (1) for Period B
+
+### Schedule activation
+Atomic transaction — deactivates existing active schedule, activates new one.
+
+### Device deletion
+When deleted, check if room still has sensors/actuators to support current
+`desired_states` and active `schedule_periods`. Clear orphaned targets.
+**Currently a TODO in the device deletion handler.**
+
+### Rooms are user-scoped
+All room queries must filter by `user_id` from JWT claims.
+
+---
+
+## Control loop (device-service — for future reference)
+
+Event-driven — triggered by incoming MQTT telemetry. Bang-bang control with
+hysteresis. In-memory cache invalidated via Postgres LISTEN/NOTIFY.
+
+```go
+type RoomCache struct {
+    DeadbandTemp     float64
+    DeadbandHumidity float64
+    DesiredState     DesiredState
+    ActivePeriods    []SchedulePeriod
+    UserTimezone     string
+    ActuatorStates   map[string]bool
+    LastActivePeriod *SchedulePeriod
+    LastPeriodEndTime time.Time
+}
+```
+
+Control logic:
+```
+current_value = avg(all sensors of type in room)
+if current_value < target - deadband  →  ON
+if current_value > target + deadband  →  OFF
+else                                  →  hold (hysteresis)
+```
+
+---
+
+## MQTT conventions
+
+- Telemetry: `devices/{device_id}/telemetry` — QoS 1
+- Commands: `devices/{device_id}/cmd` — QoS 2
+- Only `device-service`, `simulator-service`, ESP32s connect to Mosquitto
+
+---
+
+## Measurement unit conventions
+
+| Type | Unit |
+|---|---|
+| `temperature` | Celsius |
+| `humidity` | % relative humidity (0-100) |
+| `air_quality` | PPM |
+
+## Days of week convention
+
+ISO 8601: Monday = 1, Sunday = 7.
+Go's `time.Weekday()` uses Sunday = 0 — must convert explicitly.
+Write a test case specifically for Sunday.
+
+---
+
+## Docker Compose
+
+- `docker-compose.yml` — infrastructure only (postgres, timescaledb, redis, mosquitto)
+- `deployments/docker-compose.services.yml` — application services overlay
+- All services have healthchecks
+- `depends_on` uses `condition: service_healthy`
+- `restart` policy not yet set on application services (dev phase)
+- Dockerfile `context: ..` points to repo root so `shared/` is accessible
+- `replace` directive in `api-service/go.mod` for local `shared` module resolution in Docker
+
+## Makefile targets
+
+```
+up            — bring all services up (no rebuild)
+rebuild       — bring all services up with --build
+down          — bring all services down
+down-hard     — bring all services down, wipe volumes
+infra         — infrastructure only
+infra-down    — infrastructure down
+infra-down-v  — infrastructure down, wipe volumes
+rebuild-api   — rebuild api-service only
+logs          — tail all logs
+logs-api      — tail api-service logs
+logs-device   — tail device-service logs
+logs-postgres — tail postgres logs
+logs-redis    — tail redis logs
+logs-mqtt     — tail mosquitto logs
+shell-api     — shell into api-service container
+shell-postgres — psql into postgres
+shell-timescale — psql into timescaledb
+shell-redis   — redis-cli into redis
+ps            — show container status
+build-api     — build api-service image directly (for debugging build errors)
+vet           — go vet all modules
+```
+
+---
+
+## Simulator service
+
+On startup:
+1. Register user using `SIMULATOR_EMAIL`/`SIMULATOR_PASSWORD` (or login if exists)
+2. POST rooms via REST API
+3. POST devices into rooms
+4. Publish MQTT telemetry using `hw_id` from API response
+5. Uses `device_type = 'simulator'`
+
+Future: configurable scenario file for room/device counts, sensor profiles,
+heating/cooling curves.
 
 ---
 
 ## Development phases
 
-| Phase | Scope |
-|---|---|
-| 1 | Repo scaffold, Docker Compose infrastructure, full DB schema migrated |
-| 2 | `api-service` — Go modules, shared config/models, Gin server, JWT auth, all REST endpoints |
-| 3 | `device-service` — MQTT consumer, control loop, in-memory cache, LISTEN/NOTIFY invalidation |
-| 4 | `simulator-service` — API registration on startup, MQTT telemetry publishing |
-| 5 | CI (GitHub Actions), architecture diagrams, README polish |
-| Later | NGINX load balancing layer, cloud deployment (AWS or GCP) |
-
----
-
-## What to build next
-
-**Branch:** `feat/api-service-scaffold`
-
-Goals:
-1. Initialize `shared/go.mod`, `api-service/go.mod`, `simulator-service/go.mod`,
-   update `go.work` to include all four modules
-2. Add dependencies — Gin, GORM, pgx, Redis client, JWT library
-3. `shared/config/` — typed config struct loaded from env
-4. `shared/models/` — GORM models matching schema above
-5. `api-service/cmd/main.go` — starts Gin server, connects to postgres and Redis,
-   serves `GET /health`
-6. `api-service/Dockerfile` — multi-stage build
-7. Update `docker-compose.yml` — add `api-service` service entry
-
-This branch produces a service that compiles, starts, connects to its dependencies,
-and passes a CI health check. No business logic yet.
+| Phase | Scope | Status |
+|---|---|---|
+| 1 | Repo scaffold, Docker Compose, DB schema | ✅ Done |
+| 2 | `api-service` — auth, all REST endpoints | 🔄 In progress |
+| 3 | `device-service` — MQTT, control loop, cache | Pending |
+| 4 | `simulator-service` — API registration, MQTT telemetry | Pending |
+| 5 | CI, architecture diagrams, README, tests | Pending |
+| Later | NGINX load balancing, cloud deployment | Pending |
