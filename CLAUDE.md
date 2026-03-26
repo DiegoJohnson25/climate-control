@@ -1,10 +1,10 @@
-# Climate Control Project — Context Handoff
+# Climate Control Project — CLAUDE.md
 
 ## Project overview
 
 A distributed IoT climate control system backend in Go. Two independent services
 communicate via PostgreSQL and MQTT to manage room climate via ESP32 relay devices.
-Built as a portfolio project — fully demonstrable without hardware via a simulator
+Fully demonstrable without hardware via a simulator
 service.
 
 ---
@@ -14,11 +14,14 @@ service.
 **Completed:**
 - Phase 1 ✅ — repo scaffold, Docker Compose infrastructure, full DB schema migrated
 - `feat/api-service-scaffold` ✅ — merged to main
+- `feat/api-service-auth` ✅ — merged to main
 
-**Active branch:** `feat/api-service-auth`
+**Active branch:** `feat/api-service-rooms`
 
-**Last thing actually done:** Health check endpoint working in the new domain-first
-repo structure. User repository written. About to start the auth service layer.
+**Last thing actually done:** Full auth layer complete and Postman verified.
+All auth endpoints working — register, login, refresh (with rotation), logout,
+and `/users/me`. About to start the room, device, desired state, and schedule
+endpoints.
 
 ---
 
@@ -50,6 +53,8 @@ climate-control/
 │   │   │   └── router.go         # route registration, middleware chain
 │   │   ├── health/
 │   │   │   └── health.go         # plain function, no struct
+│   │   ├── ctxkeys/
+│   │   │   └── keys.go           # shared Gin context key constants
 │   │   ├── config/
 │   │   │   └── config.go         # typed config struct, Load() function
 │   │   └── initializers/
@@ -83,7 +88,7 @@ climate-control/
 │   │   ├── desired_state.go
 │   │   ├── schedule.go
 │   │   └── schedule_period.go
-│   └── db/
+│   └── database/
 │       ├── postgres.go   # GORM appdb connection
 │       └── timescale.go  # pgx TimescaleDB connection pool
 ├── firmware/
@@ -124,10 +129,22 @@ climate-control/
 - Package name is the domain: `user`, `auth`, `room`
 - File name encodes the layer: `handler.go`, `service.go`, `repository.go`
 - Types drop the domain prefix: `auth.Service` not `auth.AuthService`
-- Constructors keep the layer name: `auth.NewService`, `auth.NewHandler`, `auth.NewRedisRepository`
+- Constructors: `auth.NewService`, `auth.NewHandler`, `auth.NewRepository`
 - Health check is a plain function — `r.GET("/health", health.Check)`
 - File names are snake_case, no suffix (e.g. `handler.go` not `user_handler.go`)
 - Package/folder names are singular — `service` not `services`, `handler` not `handlers`
+- Repository constructor is always `NewRepository` regardless of backing store
+- Postgres unique violation detection lives in a private `pg_errors.go` per package
+
+---
+
+## Naming conventions (locked in)
+
+- `models.User` variables → `usr` (avoids shadowing the `user` package import)
+- `user` package imported as `user` — no alias needed since variables use `usr`
+- Service struct fields named by concept, not structure: `users`, `tokens` not `userRepo`, `tokenRepo`
+- Single-repo services use `repo` for the repository field (no ambiguity)
+- Method receivers use single letter: `(s *Service)`, `(h *Handler)`, `(r *Repository)`
 
 ---
 
@@ -350,45 +367,64 @@ CREATE INDEX idx_sensor_readings_sensor_time ON sensor_readings(sensor_id, time 
 - `HwID` needs explicit tag: `\`gorm:"column:hw_id"\``
 - `days_of_week` uses `pq.Int64Array \`gorm:"type:integer[]"\``
 - No constraint tags (`uniqueIndex`, `check`, `not null`) — migrations handle all constraints
-- `desired_states` table name set via `TableName()` method (was originally `desired_state`, renamed to plural for consistency)
+- `desired_states` table name set via `TableName()` method
 - GORM used for appdb only — TimescaleDB uses raw pgx
 
 ---
 
-## Auth architecture
+## Auth architecture (implemented)
 
 `auth` imports `user` — one directional. `user` knows nothing about `auth`.
 
 ```go
 // auth/service.go
-type service struct {
-    users user.Repository  // looks up user by email for login
-    tokens Repository      // Redis refresh token storage
+type Service struct {
+    users  *user.Repository  // user lookups for login and /users/me
+    tokens *Repository       // Redis refresh token storage
 }
 ```
 
-Wiring in `main.go`:
+Actual wiring in `main.go`:
 ```go
-userRepo    := user.NewPostgresRepository(db)
+userRepo    := user.NewRepository(db)
 userSvc     := user.NewService(userRepo)
-authRepo    := auth.NewRedisRepository(rdb)
-authSvc     := auth.NewService(userRepo, authRepo)  // takes userRepo directly
+authRepo    := auth.NewRepository(rdb, cfg.JWTRefreshTTLDays)
+authSvc     := auth.NewService(userRepo, authRepo, cfg.JWTSecret, cfg.JWTAccessTTLMinutes, cfg.JWTRefreshTTLDays)
 
 userHandler := user.NewHandler(userSvc)
 authHandler := auth.NewHandler(authSvc)
+
+r := router.Setup(authHandler, authSvc, userHandler)
 ```
 
 ### JWT design
 - Access tokens: short-lived JWT (15 min), signed with `JWT_SECRET`
-- Refresh tokens: opaque token stored in Redis with TTL (7 days)
+- Refresh tokens: opaque 32-byte cryptographically random token (`crypto/rand`)
+- Refresh tokens SHA-256 hashed before storage in Redis — raw token never persisted
 - Rotation: every `/auth/refresh` invalidates old token, issues new pair
 - Claims: standard `exp` + `user_id`
-- Logout: deletes refresh token from Redis
+- Logout: deletes hashed refresh token from Redis — access tokens remain valid until expiry by design
+- `ValidateAccessToken` lives on `auth.Service`, called by middleware
 
 ### Redis data model for refresh tokens
-- Key: the refresh token string itself
-- Value: user ID
+- Key: `sha256(refresh_token)` — hashed, never raw
+- Value: user ID string
 - TTL: `JWT_REFRESH_TTL_DAYS`
+
+### Context keys
+- Middleware injects `user_id` into Gin context using `ctxkeys.UserID`
+- All handlers extract via `c.MustGet(ctxkeys.UserID).(uuid.UUID)`
+- `ctxkeys` package at `api-service/internal/ctxkeys/keys.go` — owned by neither `auth` nor `user`
+
+### Register flow
+- `POST /auth/register` calls `userSvc.Register` then `authSvc.Login` — auto-login on registration
+- Returns 201 with token pair
+
+### Security notes
+- Refresh tokens hashed in Redis — a Redis breach does not expose usable tokens
+- `ErrNotFound` maps to `ErrInvalidCredentials` in login — prevents user enumeration
+- Logout swallows `ErrTokenNotFound` — already logged out is not an error
+- TLS termination handled by NGINX in production — Go services use plain HTTP internally
 
 ---
 
@@ -404,22 +440,19 @@ authHandler := auth.NewHandler(authSvc)
 
 **Chain:** `handler → service → repository`. Handlers never call repositories directly.
 
-**Sentinel errors** defined per domain, translated to HTTP status codes in handlers:
-```go
-var (
-    ErrEmailTaken         = errors.New("email already taken")
-    ErrInvalidCredentials = errors.New("invalid credentials")
-)
-```
+**Sentinel errors** defined per domain, translated to HTTP status codes in handlers.
 
 **Interfaces:** Not used yet — concrete types used directly. Will be added when
 tests are written in Phase 5. The refactor is mechanical at that point.
 
-**Constructors return concrete types for now:**
-```go
-func NewService(users *user.Repository, tokens *RedisRepository) *Service
-func NewHandler(svc *Service) *Handler
-```
+**Error handling in handlers:**
+- Use `c.JSON` + `return` — not `c.AbortWithStatusJSON` (Abort is for middleware only)
+- Never leak internal error details in 500 responses
+- Sentinel errors translated to specific HTTP status codes, everything else is 500
+
+**Input validation:**
+- Use `ShouldBindJSON` not `BindJSON` — allows custom response formatting on error
+- Validation tags on request structs: `binding:"required,email"`, `binding:"required,min=8"`
 
 ---
 
@@ -430,6 +463,8 @@ POST   /api/v1/auth/register
 POST   /api/v1/auth/login
 POST   /api/v1/auth/refresh
 POST   /api/v1/auth/logout
+
+GET    /api/v1/users/me
 
 GET    /api/v1/rooms
 POST   /api/v1/rooms
@@ -459,8 +494,27 @@ PUT    /api/v1/schedule-periods/:id
 DELETE /api/v1/schedule-periods/:id
 ```
 
-All endpoints except auth require `Authorization: Bearer <access_token>`.
+All endpoints except auth register/login/refresh require `Authorization: Bearer <access_token>`.
 All responses JSON. All timestamps UTC.
+
+---
+
+## Router structure
+
+```go
+r.GET("/health", health.Check)          // unprotected
+
+api := r.Group("/api/v1")
+api.POST("/auth/register", userHandler.Register)
+api.POST("/auth/login", authHandler.Login)
+api.POST("/auth/refresh", authHandler.Refresh)
+
+protected := api.Group("/")
+protected.Use(authSvc.Middleware())     // JWT validation on all routes below
+protected.POST("/auth/logout", authHandler.Logout)
+protected.GET("/users/me", userHandler.Me)
+// room, device, desired-state, schedule routes added here in next branch
+```
 
 ---
 
@@ -486,6 +540,8 @@ All responses JSON. All timestamps UTC.
 18. Room creation and `desired_states` row creation in the same transaction
 19. Rate limiting applied at router level, not inside handlers
 20. Never log config values — log variable names only on panic
+21. `api-service` reads TimescaleDB for sensor history endpoints — `metricsDB` connection is used
+22. Responses never serialize full model structs — fields returned explicitly to avoid leaking sensitive data (e.g. `password_hash`)
 
 ---
 
@@ -533,13 +589,13 @@ hysteresis. In-memory cache invalidated via Postgres LISTEN/NOTIFY.
 
 ```go
 type RoomCache struct {
-    DeadbandTemp     float64
-    DeadbandHumidity float64
-    DesiredState     DesiredState
-    ActivePeriods    []SchedulePeriod
-    UserTimezone     string
-    ActuatorStates   map[string]bool
-    LastActivePeriod *SchedulePeriod
+    DeadbandTemp      float64
+    DeadbandHumidity  float64
+    DesiredState      DesiredState
+    ActivePeriods     []SchedulePeriod
+    UserTimezone      string
+    ActuatorStates    map[string]bool
+    LastActivePeriod  *SchedulePeriod
     LastPeriodEndTime time.Time
 }
 ```
