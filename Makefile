@@ -91,3 +91,11 @@ ps:
 
 build-api:
 	docker build -f api-service/Dockerfile -t api-service $(CURDIR)
+
+# ── Go ───────────────────────────────────────────────────────────────────────
+
+vet:
+	go vet ./api-service/... ./device-service/... ./shared/... ./simulator-service/...
+
+build:
+	go build ./api-service/... ./device-service/... ./shared/... ./simulator-service/...

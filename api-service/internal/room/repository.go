@@ -103,10 +103,7 @@ func (r *Repository) UpdateDesiredState(ctx context.Context, ds *models.DesiredS
 }
 
 // -------------------------------------------------------------------------------
-// Capability queries — temporary home until the device package exists.
-// These will move to device.Repository once that package is written, and be
-// injected into room.Service as a dependency. No handler or service signatures
-// change when that refactor happens.
+// Capability queries
 // -------------------------------------------------------------------------------
 
 // HasTemperatureCapability returns true if the room has at least one device with
