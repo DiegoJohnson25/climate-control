@@ -2,6 +2,7 @@ package router
 
 import (
 	"github.com/DiegoJohnson25/climate-control/api-service/internal/auth"
+	"github.com/DiegoJohnson25/climate-control/api-service/internal/device"
 	"github.com/DiegoJohnson25/climate-control/api-service/internal/health"
 	"github.com/DiegoJohnson25/climate-control/api-service/internal/room"
 	"github.com/DiegoJohnson25/climate-control/api-service/internal/user"
@@ -13,6 +14,7 @@ func Setup(
 	authMiddleware *auth.Service,
 	userHandler *user.Handler,
 	roomHandler *room.Handler,
+	deviceHandler *device.Handler,
 ) *gin.Engine {
 	r := gin.Default()
 
@@ -40,6 +42,16 @@ func Setup(
 	// Desired state
 	protected.GET("/rooms/:id/desired-state", roomHandler.GetDesiredState)
 	protected.PUT("/rooms/:id/desired-state", roomHandler.UpdateDesiredState)
+
+	// Devices
+	protected.GET("/devices", deviceHandler.List)
+	protected.POST("/devices", deviceHandler.Create)
+	protected.GET("/devices/:id", deviceHandler.Get)
+	protected.PUT("/devices/:id", deviceHandler.Update)
+	protected.DELETE("/devices/:id", deviceHandler.Delete)
+
+	// Devices by room
+	protected.GET("/rooms/:id/devices", deviceHandler.ListByRoom)
 
 	return r
 }

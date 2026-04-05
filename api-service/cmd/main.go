@@ -7,6 +7,7 @@ import (
 
 	"github.com/DiegoJohnson25/climate-control/api-service/internal/auth"
 	"github.com/DiegoJohnson25/climate-control/api-service/internal/config"
+	"github.com/DiegoJohnson25/climate-control/api-service/internal/device"
 	"github.com/DiegoJohnson25/climate-control/api-service/internal/initializers"
 	"github.com/DiegoJohnson25/climate-control/api-service/internal/room"
 	"github.com/DiegoJohnson25/climate-control/api-service/internal/router"
@@ -45,6 +46,10 @@ func main() {
 	roomSvc := room.NewService(roomRepo)
 	roomHandler := room.NewHandler(roomSvc)
 
-	r := router.Setup(authHandler, authSvc, userHandler, roomHandler)
+	deviceRepo := device.NewRepository(db)
+	deviceSvc := device.NewService(deviceRepo, roomRepo)
+	deviceHandler := device.NewHandler(deviceSvc)
+
+	r := router.Setup(authHandler, authSvc, userHandler, roomHandler, deviceHandler)
 	r.Run(fmt.Sprintf(":%d", cfg.APIPort))
 }
