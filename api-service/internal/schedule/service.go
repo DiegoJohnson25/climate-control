@@ -2,7 +2,6 @@ package schedule
 
 import (
 	"context"
-	"time"
 
 	"github.com/DiegoJohnson25/climate-control/api-service/internal/room"
 	"github.com/DiegoJohnson25/climate-control/shared/models"
@@ -15,7 +14,7 @@ type Service struct {
 	rooms     *room.Repository
 }
 
-func NewSchedule(schedules *Repository, rooms *room.Repository) *Service {
+func NewService(schedules *Repository, rooms *room.Repository) *Service {
 	return &Service{schedules: schedules, rooms: rooms}
 }
 
@@ -152,7 +151,7 @@ type PeriodInput struct {
 
 // CreatePeriod creates a new period under the given schedule.
 // Verifies schedule ownership and checks for time overlap before creating.
-func (s *Service) CreatePeriod(ctx context.Context, userID, scheduleID uuid.UUID, input PeriodInput) (*models.SchedulePeriod, error) {
+func (s *Service) CreatePeriod(ctx context.Context, scheduleID, userID uuid.UUID, input PeriodInput) (*models.SchedulePeriod, error) {
 	sched, err := s.schedules.GetByID(ctx, scheduleID, userID)
 	if err != nil {
 		return nil, err
@@ -246,29 +245,14 @@ func (s *Service) buildPeriod(ctx context.Context, scheduleID uuid.UUID, input P
 		return models.SchedulePeriod{}, ErrPeriodOverlap
 	}
 
-	start, err := parseTime(input.StartTime)
-	if err != nil {
-		return models.SchedulePeriod{}, err
-	}
-	end, err := parseTime(input.EndTime)
-	if err != nil {
-		return models.SchedulePeriod{}, err
-	}
-
 	return models.SchedulePeriod{
 		ScheduleID: scheduleID,
 		Name:       input.Name,
 		DaysOfWeek: pq.Int64Array(input.DaysOfWeek),
-		StartTime:  start,
-		EndTime:    end,
+		StartTime:  input.StartTime,
+		EndTime:    input.EndTime,
 		Mode:       input.Mode,
 		TargetTemp: input.TargetTemp,
 		TargetHum:  input.TargetHum,
 	}, nil
-}
-
-// parseTime parses an "HH:MM" string into a time.Time for comparison.
-// Date component is zeroed — only the time portion is meaningful.
-func parseTime(t string) (time.Time, error) {
-	return time.Parse("15:04", t)
 }

@@ -6,6 +6,7 @@ import (
 
 	"github.com/DiegoJohnson25/climate-control/shared/models"
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 	"gorm.io/gorm"
 )
 
@@ -188,10 +189,10 @@ func (r *Repository) HasOverlap(
 		FROM schedule_periods
 		WHERE schedule_id = ?
 		AND   days_of_week && ?
-		AND   start_time   <  ?::time
-		AND   end_time     >  ?::time
-		AND   (? IS NULL OR id != ?)
-	`, scheduleID, days, endTime, startTime, excludeID, excludeID)
+		AND   start_time < ?
+		AND   end_time   > ?
+		AND   (?::uuid IS NULL OR id != ?::uuid)
+	`, scheduleID, pq.Int64Array(days), endTime, startTime, excludeID, excludeID)
 
 	var count int64
 	if err := query.Scan(&count).Error; err != nil {
@@ -232,7 +233,7 @@ func (r *Repository) PeriodsHaveCapability(ctx context.Context, scheduleID, room
 		SELECT COUNT(*)
 		FROM schedule_periods sp
 		WHERE sp.schedule_id     = ?
-		AND   sp.target_humidity IS NOT NULL
+		AND   sp.target_hum IS NOT NULL
 		AND   NOT EXISTS (
 			SELECT 1
 			FROM devices d
