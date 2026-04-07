@@ -134,13 +134,13 @@ func (h *Handler) Create(c *gin.Context) {
 		case errors.Is(err, ErrNameTaken):
 			c.JSON(http.StatusConflict, gin.H{"error": ErrNameTaken.Error()})
 		case errors.Is(err, ErrInvalidSensor):
-			c.JSON(http.StatusBadRequest, gin.H{"error": ErrInvalidSensor.Error()})
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"error": ErrInvalidSensor.Error()})
 		case errors.Is(err, ErrInvalidActuator):
-			c.JSON(http.StatusBadRequest, gin.H{"error": ErrInvalidActuator.Error()})
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"error": ErrInvalidActuator.Error()})
 		case errors.Is(err, ErrDuplicateSensor):
-			c.JSON(http.StatusBadRequest, gin.H{"error": ErrDuplicateSensor.Error()})
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"error": ErrDuplicateSensor.Error()})
 		case errors.Is(err, ErrDuplicateActuator):
-			c.JSON(http.StatusBadRequest, gin.H{"error": ErrDuplicateActuator.Error()})
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"error": ErrDuplicateActuator.Error()})
 		default:
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		}

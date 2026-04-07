@@ -204,7 +204,7 @@ func (h *Handler) UpdateDesiredState(c *gin.Context) {
 	// RFC3339 string → parsed timestamp
 	overrideUntil, err := resolveManualOverride(req.ManualOverride)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": ErrInvalidOverride.Error()})
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": ErrInvalidOverride.Error()})
 		return
 	}
 
