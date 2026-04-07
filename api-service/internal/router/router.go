@@ -5,6 +5,7 @@ import (
 	"github.com/DiegoJohnson25/climate-control/api-service/internal/device"
 	"github.com/DiegoJohnson25/climate-control/api-service/internal/health"
 	"github.com/DiegoJohnson25/climate-control/api-service/internal/room"
+	"github.com/DiegoJohnson25/climate-control/api-service/internal/schedule"
 	"github.com/DiegoJohnson25/climate-control/api-service/internal/user"
 	"github.com/gin-gonic/gin"
 )
@@ -15,6 +16,7 @@ func Setup(
 	userHandler *user.Handler,
 	roomHandler *room.Handler,
 	deviceHandler *device.Handler,
+	scheduleHandler *schedule.Handler,
 ) *gin.Engine {
 	r := gin.Default()
 
@@ -52,6 +54,21 @@ func Setup(
 
 	// Devices by room
 	protected.GET("/rooms/:id/devices", deviceHandler.ListByRoom)
+
+	// Schedules
+	protected.GET("/rooms/:id/schedules", scheduleHandler.ListByRoom)
+	protected.POST("/rooms/:id/schedules", scheduleHandler.Create)
+	protected.GET("/schedules/:id", scheduleHandler.Get)
+	protected.PUT("/schedules/:id", scheduleHandler.Update)
+	protected.DELETE("/schedules/:id", scheduleHandler.Delete)
+	protected.PATCH("/schedules/:id/activate", scheduleHandler.Activate)
+	protected.PATCH("/schedules/:id/deactivate", scheduleHandler.Deactivate)
+
+	// Schedule periods
+	protected.POST("/schedules/:id/periods", scheduleHandler.CreatePeriod)
+	protected.GET("/schedules/:id/periods", scheduleHandler.ListPeriods)
+	protected.PUT("/schedule-periods/:id", scheduleHandler.UpdatePeriod)
+	protected.DELETE("/schedule-periods/:id", scheduleHandler.DeletePeriod)
 
 	return r
 }
