@@ -36,7 +36,6 @@ func (r *Repository) List(ctx context.Context, userID uuid.UUID) ([]DeviceWithCa
 
 // List returns all devices assigned to the given room, with sensors and
 // actuators bulk fetched.
-// TODO Check that room belongs to user first.
 func (r *Repository) ListByRoom(ctx context.Context, roomID uuid.UUID) ([]DeviceWithCapabilities, error) {
 	var devices []models.Device
 	if err := r.db.WithContext(ctx).Where("room_id = ?", roomID).Find(&devices).Error; err != nil {
