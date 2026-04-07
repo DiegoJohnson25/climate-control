@@ -7,7 +7,8 @@ CREATE TABLE schedules (
     name        TEXT NOT NULL,
     is_active   BOOLEAN NOT NULL DEFAULT false,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(room_id, name)
 );
 
 CREATE INDEX idx_schedules_room_id ON schedules(room_id);
