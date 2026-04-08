@@ -1,0 +1,3422 @@
+{
+  "info": {
+    "_postman_id": "f7e4a216-a4cd-4695-9551-b7bdc9230c55",
+    "name": "climate-control-integration",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "27475274"
+  },
+  "item": [
+    {
+      "name": "01 - Auth & Setup",
+      "item": [
+        {
+          "name": "Register User A",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "const json = pm.response.json();",
+                  "pm.test('Has id', () => pm.expect(json.id).to.be.a('string'));"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"email\": \"user_a@integration.test\", \"password\": \"Password123!\", \"timezone\": \"America/Toronto\"}"
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/register",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "auth",
+                "register"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Login User A",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.environment.set('access_token', json.access_token);",
+                  "pm.environment.set('refresh_token', json.refresh_token);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"email\": \"user_a@integration.test\", \"password\": \"Password123!\"}"
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/login",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Current User",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('Email matches', () => pm.expect(json.email).to.eql('user_a@integration.test'));",
+                  "pm.environment.set('user_a_id', json.id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/users/me",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "users",
+                "me"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "02 - Rooms",
+      "item": [
+        {
+          "name": "Create Room A",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "pm.environment.set('room_a_id', pm.response.json().id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\": \"Integration Room A\", \"deadband_temp\": 1.0, \"deadband_hum\": 5.0}"
+            },
+            "url": {
+              "raw": "{{base_url}}/rooms",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "rooms"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create Room B",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "pm.environment.set('room_b_id', pm.response.json().id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\": \"Integration Room B\", \"deadband_temp\": 1.0, \"deadband_hum\": 5.0}"
+            },
+            "url": {
+              "raw": "{{base_url}}/rooms",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "rooms"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create Duplicate Room Name - Expect 409",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 409', () => pm.response.to.have.status(409));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\": \"Integration Room A\", \"deadband_temp\": 1.0, \"deadband_hum\": 5.0}"
+            },
+            "url": {
+              "raw": "{{base_url}}/rooms",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "rooms"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List Rooms",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Has at least 2 rooms', () => pm.expect(pm.response.json().length).to.be.at.least(2));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/rooms",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "rooms"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Room A",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('ID matches', () => pm.expect(pm.response.json().id).to.eql(pm.environment.get('room_a_id')));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/rooms/{{room_a_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "rooms",
+                "{{room_a_id}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Room A Deadband",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Deadband updated', () => pm.expect(pm.response.json().deadband_temp).to.eql(1.5));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\": \"Integration Room A\", \"deadband_temp\": 1.5, \"deadband_hum\": 5.0}"
+            },
+            "url": {
+              "raw": "{{base_url}}/rooms/{{room_a_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "rooms",
+                "{{room_a_id}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Room A Desired State",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Default mode is OFF', () => pm.expect(pm.response.json().mode).to.eql('OFF'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/rooms/{{room_a_id}}/desired-state",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "rooms",
+                "{{room_a_id}}",
+                "desired-state"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "03 - Devices",
+      "item": [
+        {
+          "name": "Create Device - Temp+Heater",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "pm.environment.set('device_temp_id', pm.response.json().id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\": \"Temp Device\", \"hw_id\": \"hw-int-temp-001\", \"device_type\": \"physical\", \"sensors\": [\"temperature\"], \"actuators\": [\"heater\"]}"
+            },
+            "url": {
+              "raw": "{{base_url}}/devices",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "devices"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create Device - Hum+Humidifier",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "pm.environment.set('device_hum_id', pm.response.json().id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\": \"Hum Device\", \"hw_id\": \"hw-int-hum-001\", \"device_type\": \"physical\", \"sensors\": [\"humidity\"], \"actuators\": [\"humidifier\"]}"
+            },
+            "url": {
+              "raw": "{{base_url}}/devices",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "devices"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create Device - Full Capabilities",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "pm.environment.set('device_full_id', pm.response.json().id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\": \"Full Device\", \"hw_id\": \"hw-int-full-001\", \"device_type\": \"physical\", \"sensors\": [\"temperature\", \"humidity\"], \"actuators\": [\"heater\", \"humidifier\"]}"
+            },
+            "url": {
+              "raw": "{{base_url}}/devices",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "devices"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Assign Temp Device to Room A",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Room assigned', () => pm.expect(pm.response.json().room_id).to.eql(pm.environment.get('room_a_id')));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\": \"Temp Device\", \"room_id\": \"{{room_a_id}}\"}"
+            },
+            "url": {
+              "raw": "{{base_url}}/devices/{{device_temp_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "devices",
+                "{{device_temp_id}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Assign Hum Device to Room A",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\": \"Hum Device\", \"room_id\": \"{{room_a_id}}\"}"
+            },
+            "url": {
+              "raw": "{{base_url}}/devices/{{device_hum_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "devices",
+                "{{device_hum_id}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Assign Full Device to Room B",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\": \"Full Device\", \"room_id\": \"{{room_b_id}}\"}"
+            },
+            "url": {
+              "raw": "{{base_url}}/devices/{{device_full_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "devices",
+                "{{device_full_id}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List Devices in Room A",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Room A has 2 devices', () => pm.expect(pm.response.json().length).to.eql(2));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/rooms/{{room_a_id}}/devices",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "rooms",
+                "{{room_a_id}}",
+                "devices"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "04 - Desired State",
+      "item": [
+        {
+          "name": "Set AUTO + target_temp - Expect 200",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Mode is AUTO', () => pm.expect(pm.response.json().mode).to.eql('AUTO'));",
+                  "pm.test('target_temp set', () => pm.expect(pm.response.json().target_temp).to.eql(22.0));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"mode\": \"AUTO\", \"target_temp\": 22.0, \"manual_override_until\": null}"
+            },
+            "url": {
+              "raw": "{{base_url}}/rooms/{{room_a_id}}/desired-state",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "rooms",
+                "{{room_a_id}}",
+                "desired-state"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Set AUTO + target_hum - Expect 200",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"mode\": \"AUTO\", \"target_hum\": 45.0, \"manual_override_until\": null}"
+            },
+            "url": {
+              "raw": "{{base_url}}/rooms/{{room_a_id}}/desired-state",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "rooms",
+                "{{room_a_id}}",
+                "desired-state"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Set AUTO + both targets - Expect 200",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"mode\": \"AUTO\", \"target_temp\": 22.0, \"target_hum\": 45.0, \"manual_override_until\": null}"
+            },
+            "url": {
+              "raw": "{{base_url}}/rooms/{{room_a_id}}/desired-state",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "rooms",
+                "{{room_a_id}}",
+                "desired-state"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Set AUTO + no targets - Expect 422",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 422', () => pm.response.to.have.status(422));"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"mode\": \"AUTO\", \"manual_override_until\": null}"
+            },
+            "url": {
+              "raw": "{{base_url}}/rooms/{{room_a_id}}/desired-state",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "rooms",
+                "{{room_a_id}}",
+                "desired-state"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Set OFF - Expect 200",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Mode is OFF', () => pm.expect(pm.response.json().mode).to.eql('OFF'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"mode\": \"OFF\", \"manual_override_until\": null}"
+            },
+            "url": {
+              "raw": "{{base_url}}/rooms/{{room_a_id}}/desired-state",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "rooms",
+                "{{room_a_id}}",
+                "desired-state"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "05 - Schedules CRUD",
+      "item": [
+        {
+          "name": "Create Schedule A for Room A",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "const json = pm.response.json();",
+                  "pm.test('Name matches', () => pm.expect(json.name).to.eql('Weekday Schedule'));",
+                  "pm.test('is_active is false', () => pm.expect(json.is_active).to.be.false);",
+                  "pm.environment.set('schedule_a_id', json.id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\": \"Weekday Schedule\"}"
+            },
+            "url": {
+              "raw": "{{base_url}}/rooms/{{room_a_id}}/schedules",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "rooms",
+                "{{room_a_id}}",
+                "schedules"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create Schedule B for Room A",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "pm.environment.set('schedule_b_id', pm.response.json().id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\": \"Weekend Schedule\"}"
+            },
+            "url": {
+              "raw": "{{base_url}}/rooms/{{room_a_id}}/schedules",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "rooms",
+                "{{room_a_id}}",
+                "schedules"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create Duplicate Schedule Name - Expect 409",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 409', () => pm.response.to.have.status(409));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\": \"Weekday Schedule\"}"
+            },
+            "url": {
+              "raw": "{{base_url}}/rooms/{{room_a_id}}/schedules",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "rooms",
+                "{{room_a_id}}",
+                "schedules"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List Schedules for Room A",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Has 2 schedules', () => pm.expect(pm.response.json().length).to.eql(2));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/rooms/{{room_a_id}}/schedules",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "rooms",
+                "{{room_a_id}}",
+                "schedules"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Schedule A",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('ID matches', () => pm.expect(pm.response.json().id).to.eql(pm.environment.get('schedule_a_id')));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/schedules/{{schedule_a_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "schedules",
+                "{{schedule_a_id}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Schedule A Name",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Name updated', () => pm.expect(pm.response.json().name).to.eql('Weekday Schedule Updated'));",
+                  "pm.test('is_active unchanged', () => pm.expect(pm.response.json().is_active).to.be.false);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\": \"Weekday Schedule Updated\"}"
+            },
+            "url": {
+              "raw": "{{base_url}}/schedules/{{schedule_a_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "schedules",
+                "{{schedule_a_id}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Schedule A to Existing Name - Expect 409",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 409', () => pm.response.to.have.status(409));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\": \"Weekend Schedule\"}"
+            },
+            "url": {
+              "raw": "{{base_url}}/schedules/{{schedule_a_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "schedules",
+                "{{schedule_a_id}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Restore Schedule A Name",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\": \"Weekday Schedule\"}"
+            },
+            "url": {
+              "raw": "{{base_url}}/schedules/{{schedule_a_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "schedules",
+                "{{schedule_a_id}}"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "06 - Periods CRUD",
+      "item": [
+        {
+          "name": "Create Period 1 - Mon-Fri Morning AUTO temp",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "const json = pm.response.json();",
+                  "pm.test('start_time correct', () => pm.expect(json.start_time).to.eql('07:00'));",
+                  "pm.test('end_time correct', () => pm.expect(json.end_time).to.eql('09:00'));",
+                  "pm.test('mode is AUTO', () => pm.expect(json.mode).to.eql('AUTO'));",
+                  "pm.environment.set('period_1_id', json.id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"days_of_week\": [1,2,3,4,5], \"start_time\": \"07:00\", \"end_time\": \"09:00\", \"mode\": \"AUTO\", \"target_temp\": 22.0}"
+            },
+            "url": {
+              "raw": "{{base_url}}/schedules/{{schedule_a_id}}/periods",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "schedules",
+                "{{schedule_a_id}}",
+                "periods"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create Period 2 - Mon-Fri Evening AUTO temp+hum",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "pm.environment.set('period_2_id', pm.response.json().id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\": \"Evening Comfort\", \"days_of_week\": [1,2,3,4,5], \"start_time\": \"17:00\", \"end_time\": \"22:00\", \"mode\": \"AUTO\", \"target_temp\": 21.5, \"target_hum\": 45.0}"
+            },
+            "url": {
+              "raw": "{{base_url}}/schedules/{{schedule_a_id}}/periods",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "schedules",
+                "{{schedule_a_id}}",
+                "periods"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create Period 3 - Weekend AUTO temp",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "pm.environment.set('period_3_id', pm.response.json().id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"days_of_week\": [6,7], \"start_time\": \"08:00\", \"end_time\": \"23:00\", \"mode\": \"AUTO\", \"target_temp\": 20.0}"
+            },
+            "url": {
+              "raw": "{{base_url}}/schedules/{{schedule_a_id}}/periods",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "schedules",
+                "{{schedule_a_id}}",
+                "periods"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create Period 4 - Mon-Fri Lunch OFF",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "pm.environment.set('period_4_id', pm.response.json().id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"days_of_week\": [1,2,3,4,5], \"start_time\": \"12:00\", \"end_time\": \"13:00\", \"mode\": \"OFF\"}"
+            },
+            "url": {
+              "raw": "{{base_url}}/schedules/{{schedule_a_id}}/periods",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "schedules",
+                "{{schedule_a_id}}",
+                "periods"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List Periods for Schedule A",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Has 4 periods', () => pm.expect(pm.response.json().length).to.eql(4));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/schedules/{{schedule_a_id}}/periods",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "schedules",
+                "{{schedule_a_id}}",
+                "periods"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Period 1 - Extend end time",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('end_time updated', () => pm.expect(pm.response.json().end_time).to.eql('09:30'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"days_of_week\": [1,2,3,4,5], \"start_time\": \"07:00\", \"end_time\": \"09:30\", \"mode\": \"AUTO\", \"target_temp\": 22.0}"
+            },
+            "url": {
+              "raw": "{{base_url}}/schedule-periods/{{period_1_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "schedule-periods",
+                "{{period_1_id}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Period 1 - Same values no self-conflict",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"days_of_week\": [1,2,3,4,5], \"start_time\": \"07:00\", \"end_time\": \"09:30\", \"mode\": \"AUTO\", \"target_temp\": 22.0}"
+            },
+            "url": {
+              "raw": "{{base_url}}/schedule-periods/{{period_1_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "schedule-periods",
+                "{{period_1_id}}"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "07 - Period Conflict Detection",
+      "item": [
+        {
+          "name": "Overlap - Exact same window - Expect 409",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 409', () => pm.response.to.have.status(409));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"days_of_week\": [1,2,3,4,5], \"start_time\": \"07:00\", \"end_time\": \"09:30\", \"mode\": \"OFF\"}"
+            },
+            "url": {
+              "raw": "{{base_url}}/schedules/{{schedule_a_id}}/periods",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "schedules",
+                "{{schedule_a_id}}",
+                "periods"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Overlap - Partial time same days - Expect 409",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 409', () => pm.response.to.have.status(409));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"days_of_week\": [1], \"start_time\": \"09:00\", \"end_time\": \"10:00\", \"mode\": \"OFF\"}"
+            },
+            "url": {
+              "raw": "{{base_url}}/schedules/{{schedule_a_id}}/periods",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "schedules",
+                "{{schedule_a_id}}",
+                "periods"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Overlap - Shared day in array - Expect 409",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 409', () => pm.response.to.have.status(409));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"days_of_week\": [3,4,5,6,7], \"start_time\": \"07:30\", \"end_time\": \"08:30\", \"mode\": \"OFF\"}"
+            },
+            "url": {
+              "raw": "{{base_url}}/schedules/{{schedule_a_id}}/periods",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "schedules",
+                "{{schedule_a_id}}",
+                "periods"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "No Overlap - Different days same time - Expect 201",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "pm.environment.set('period_5_id', pm.response.json().id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"days_of_week\": [6,7], \"start_time\": \"07:00\", \"end_time\": \"08:00\", \"mode\": \"AUTO\", \"target_temp\": 19.0}"
+            },
+            "url": {
+              "raw": "{{base_url}}/schedules/{{schedule_a_id}}/periods",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "schedules",
+                "{{schedule_a_id}}",
+                "periods"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "No Overlap - Same days adjacent time - Expect 201",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "pm.environment.set('period_6_id', pm.response.json().id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"days_of_week\": [1,2,3,4,5], \"start_time\": \"10:00\", \"end_time\": \"11:00\", \"mode\": \"AUTO\", \"target_temp\": 20.0}"
+            },
+            "url": {
+              "raw": "{{base_url}}/schedules/{{schedule_a_id}}/periods",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "schedules",
+                "{{schedule_a_id}}",
+                "periods"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Validation - end_time less than start_time - Expect 422",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 422', () => pm.response.to.have.status(422));"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"days_of_week\": [1], \"start_time\": \"10:00\", \"end_time\": \"08:00\", \"mode\": \"OFF\"}"
+            },
+            "url": {
+              "raw": "{{base_url}}/schedules/{{schedule_a_id}}/periods",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "schedules",
+                "{{schedule_a_id}}",
+                "periods"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Validation - end_time equals start_time - Expect 422",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 422', () => pm.response.to.have.status(422));"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"days_of_week\": [1], \"start_time\": \"10:00\", \"end_time\": \"10:00\", \"mode\": \"OFF\"}"
+            },
+            "url": {
+              "raw": "{{base_url}}/schedules/{{schedule_a_id}}/periods",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "schedules",
+                "{{schedule_a_id}}",
+                "periods"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Validation - days_of_week contains 0 - Expect 422",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 422', () => pm.response.to.have.status(422));"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"days_of_week\": [0,1,2], \"start_time\": \"08:00\", \"end_time\": \"09:00\", \"mode\": \"OFF\"}"
+            },
+            "url": {
+              "raw": "{{base_url}}/schedules/{{schedule_a_id}}/periods",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "schedules",
+                "{{schedule_a_id}}",
+                "periods"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Validation - days_of_week contains 8 - Expect 422",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 422', () => pm.response.to.have.status(422));"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"days_of_week\": [6,7,8], \"start_time\": \"08:00\", \"end_time\": \"09:00\", \"mode\": \"OFF\"}"
+            },
+            "url": {
+              "raw": "{{base_url}}/schedules/{{schedule_a_id}}/periods",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "schedules",
+                "{{schedule_a_id}}",
+                "periods"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Validation - Invalid time format - Expect 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 400', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"days_of_week\": [1], \"start_time\": \"25:00\", \"end_time\": \"26:00\", \"mode\": \"OFF\"}"
+            },
+            "url": {
+              "raw": "{{base_url}}/schedules/{{schedule_a_id}}/periods",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "schedules",
+                "{{schedule_a_id}}",
+                "periods"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Validation - AUTO no targets - Expect 422",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 422', () => pm.response.to.have.status(422));"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"days_of_week\": [1], \"start_time\": \"14:00\", \"end_time\": \"15:00\", \"mode\": \"AUTO\"}"
+            },
+            "url": {
+              "raw": "{{base_url}}/schedules/{{schedule_a_id}}/periods",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "schedules",
+                "{{schedule_a_id}}",
+                "periods"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update - Overlap with another period - Expect 409",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 409', () => pm.response.to.have.status(409));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"days_of_week\": [1,2,3,4,5], \"start_time\": \"17:00\", \"end_time\": \"22:00\", \"mode\": \"AUTO\", \"target_temp\": 22.0}"
+            },
+            "url": {
+              "raw": "{{base_url}}/schedule-periods/{{period_1_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "schedule-periods",
+                "{{period_1_id}}"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "08 - Activation Flow",
+      "item": [
+        {
+          "name": "Activate Schedule A - Expect 200",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('is_active is true', () => pm.expect(pm.response.json().is_active).to.be.true);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/schedules/{{schedule_a_id}}/activate",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "schedules",
+                "{{schedule_a_id}}",
+                "activate"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Activate Schedule A Again - Expect 409",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 409', () => pm.response.to.have.status(409));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/schedules/{{schedule_a_id}}/activate",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "schedules",
+                "{{schedule_a_id}}",
+                "activate"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create Schedule C for Room A",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "pm.environment.set('schedule_c_id', pm.response.json().id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\": \"Night Schedule\"}"
+            },
+            "url": {
+              "raw": "{{base_url}}/rooms/{{room_a_id}}/schedules",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "rooms",
+                "{{room_a_id}}",
+                "schedules"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Add Period to Schedule C",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"days_of_week\": [1,2,3,4,5], \"start_time\": \"23:00\", \"end_time\": \"23:59\", \"mode\": \"AUTO\", \"target_temp\": 18.0}"
+            },
+            "url": {
+              "raw": "{{base_url}}/schedules/{{schedule_c_id}}/periods",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "schedules",
+                "{{schedule_c_id}}",
+                "periods"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Activate Schedule C - Swaps Schedule A - Expect 200",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('is_active is true', () => pm.expect(pm.response.json().is_active).to.be.true);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/schedules/{{schedule_c_id}}/activate",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "schedules",
+                "{{schedule_c_id}}",
+                "activate"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Schedule A - Verify Now Inactive",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Schedule A is now inactive', () => pm.expect(pm.response.json().is_active).to.be.false);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/schedules/{{schedule_a_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "schedules",
+                "{{schedule_a_id}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Deactivate Schedule C - Expect 200",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('is_active is false', () => pm.expect(pm.response.json().is_active).to.be.false);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/schedules/{{schedule_c_id}}/deactivate",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "schedules",
+                "{{schedule_c_id}}",
+                "deactivate"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Deactivate Schedule C Again - Expect 409",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 409', () => pm.response.to.have.status(409));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/schedules/{{schedule_c_id}}/deactivate",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "schedules",
+                "{{schedule_c_id}}",
+                "deactivate"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "09 - Capability Conflict",
+      "item": [
+        {
+          "name": "Create Schedule for Room B",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "pm.environment.set('schedule_room_b_id', pm.response.json().id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\": \"Room B Schedule\"}"
+            },
+            "url": {
+              "raw": "{{base_url}}/rooms/{{room_b_id}}/schedules",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "rooms",
+                "{{room_b_id}}",
+                "schedules"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Add Period with target_hum to Room B Schedule",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"days_of_week\": [1,2,3,4,5], \"start_time\": \"08:00\", \"end_time\": \"10:00\", \"mode\": \"AUTO\", \"target_hum\": 50.0}"
+            },
+            "url": {
+              "raw": "{{base_url}}/schedules/{{schedule_room_b_id}}/periods",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "schedules",
+                "{{schedule_room_b_id}}",
+                "periods"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Activate Room B Schedule - Expect 200",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/schedules/{{schedule_room_b_id}}/activate",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "schedules",
+                "{{schedule_room_b_id}}",
+                "activate"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Unassign Full Device - Blocked by Active Schedule - Expect 409",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 409', () => pm.response.to.have.status(409));",
+                  "pm.test('Has hint', () => pm.expect(pm.response.json().hint).to.be.a('string'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\": \"Full Device\"}"
+            },
+            "url": {
+              "raw": "{{base_url}}/devices/{{device_full_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "devices",
+                "{{device_full_id}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Deactivate Room B Schedule",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/schedules/{{schedule_room_b_id}}/deactivate",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "schedules",
+                "{{schedule_room_b_id}}",
+                "deactivate"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Unassign Full Device - Now Allowed - Expect 200",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('room_id is null', () => pm.expect(pm.response.json().room_id).to.be.null);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\": \"Full Device\"}"
+            },
+            "url": {
+              "raw": "{{base_url}}/devices/{{device_full_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "devices",
+                "{{device_full_id}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Reassign Full Device to Room B",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\": \"Full Device\", \"room_id\": \"{{room_b_id}}\"}"
+            },
+            "url": {
+              "raw": "{{base_url}}/devices/{{device_full_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "devices",
+                "{{device_full_id}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create Schedule D for Room A",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "pm.environment.set('schedule_d_id', pm.response.json().id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\": \"Capability Test Schedule\"}"
+            },
+            "url": {
+              "raw": "{{base_url}}/rooms/{{room_a_id}}/schedules",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "rooms",
+                "{{room_a_id}}",
+                "schedules"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Add Period with target_temp and target_hum to Schedule D",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"days_of_week\": [1,2,3,4,5,6,7], \"start_time\": \"06:00\", \"end_time\": \"08:00\", \"mode\": \"AUTO\", \"target_temp\": 20.0, \"target_hum\": 40.0}"
+            },
+            "url": {
+              "raw": "{{base_url}}/schedules/{{schedule_d_id}}/periods",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "schedules",
+                "{{schedule_d_id}}",
+                "periods"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Unassign Hum Device from Room A",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\": \"Hum Device\"}"
+            },
+            "url": {
+              "raw": "{{base_url}}/devices/{{device_hum_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "devices",
+                "{{device_hum_id}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Activate Schedule D - Capability Conflict - Expect 409",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 409', () => pm.response.to.have.status(409));",
+                  "pm.test('Has hint', () => pm.expect(pm.response.json().hint).to.be.a('string'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/schedules/{{schedule_d_id}}/activate",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "schedules",
+                "{{schedule_d_id}}",
+                "activate"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Reassign Hum Device to Room A",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\": \"Hum Device\", \"room_id\": \"{{room_a_id}}\"}"
+            },
+            "url": {
+              "raw": "{{base_url}}/devices/{{device_hum_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "devices",
+                "{{device_hum_id}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Activate Schedule D - Now Succeeds - Expect 200",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('is_active is true', () => pm.expect(pm.response.json().is_active).to.be.true);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/schedules/{{schedule_d_id}}/activate",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "schedules",
+                "{{schedule_d_id}}",
+                "activate"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "10 - Cross-user Isolation",
+      "item": [
+        {
+          "name": "Register User B",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"email\": \"user_b@integration.test\", \"password\": \"Password123!\", \"timezone\": \"UTC\"}"
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/register",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "auth",
+                "register"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Login User B",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.environment.set('user_b_token', pm.response.json().access_token);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"email\": \"user_b@integration.test\", \"password\": \"Password123!\"}"
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/login",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "User B Get Schedule A - Expect 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 404', () => pm.response.to.have.status(404));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{user_b_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/schedules/{{schedule_a_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "schedules",
+                "{{schedule_a_id}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "User B Delete Schedule A - Expect 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 404', () => pm.response.to.have.status(404));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{user_b_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/schedules/{{schedule_a_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "schedules",
+                "{{schedule_a_id}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "User B Get Period 1 - Expect 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 404', () => pm.response.to.have.status(404));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{user_b_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/schedule-periods/{{period_1_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "schedule-periods",
+                "{{period_1_id}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "User B Update Period 1 - Expect 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 404', () => pm.response.to.have.status(404));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{user_b_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"days_of_week\": [1], \"start_time\": \"07:00\", \"end_time\": \"09:00\", \"mode\": \"OFF\"}"
+            },
+            "url": {
+              "raw": "{{base_url}}/schedule-periods/{{period_1_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "schedule-periods",
+                "{{period_1_id}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "User B Activate Schedule A - Expect 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 404', () => pm.response.to.have.status(404));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{user_b_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/schedules/{{schedule_a_id}}/activate",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "schedules",
+                "{{schedule_a_id}}",
+                "activate"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "11 - Cleanup",
+      "item": [
+        {
+          "name": "Switch Back to User A",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.environment.set('access_token', pm.response.json().access_token);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"email\": \"user_a@integration.test\", \"password\": \"Password123!\"}"
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/login",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Period 5",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 204', () => pm.response.to.have.status(204));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/schedule-periods/{{period_5_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "schedule-periods",
+                "{{period_5_id}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Period 5 Again - Expect 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 404', () => pm.response.to.have.status(404));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/schedule-periods/{{period_5_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "schedule-periods",
+                "{{period_5_id}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Schedule A - Cascades Periods",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 204', () => pm.response.to.have.status(204));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/schedules/{{schedule_a_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "schedules",
+                "{{schedule_a_id}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Schedule A After Delete - Expect 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 404', () => pm.response.to.have.status(404));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/schedules/{{schedule_a_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "schedules",
+                "{{schedule_a_id}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List Periods for Deleted Schedule - Expect 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 404', () => pm.response.to.have.status(404));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/schedules/{{schedule_a_id}}/periods",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "schedules",
+                "{{schedule_a_id}}",
+                "periods"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,420 @@
+{
+  "info": {
+    "name": "climate-control-manual",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [{"key": "token", "value": "{{access_token}}", "type": "string"}]
+  },
+  "item": [
+    {
+      "name": "_setup",
+      "item": [
+        {
+          "name": "Register",
+          "request": {
+            "auth": {"type": "noauth"},
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": "{{base_url}}/auth/register",
+            "body": {"mode": "raw", "raw": "{\"email\": \"dev@local.test\", \"password\": \"Password123!\", \"timezone\": \"America/Toronto\"}"}
+          }
+        },
+        {
+          "name": "Login",
+          "event": [{"listen": "test", "script": {"exec": ["const json = pm.response.json();", "pm.environment.set('access_token', json.access_token);", "pm.environment.set('refresh_token', json.refresh_token);"]}}],
+          "request": {
+            "auth": {"type": "noauth"},
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": "{{base_url}}/auth/login",
+            "body": {"mode": "raw", "raw": "{\"email\": \"dev@local.test\", \"password\": \"Password123!\"}"}
+          }
+        },
+        {
+          "name": "Refresh Token",
+          "event": [{"listen": "test", "script": {"exec": ["const json = pm.response.json();", "pm.environment.set('access_token', json.access_token);", "pm.environment.set('refresh_token', json.refresh_token);"]}}],
+          "request": {
+            "auth": {"type": "noauth"},
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": "{{base_url}}/auth/refresh",
+            "body": {"mode": "raw", "raw": "{\"refresh_token\": \"{{refresh_token}}\"}"}
+          }
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": "{{base_url}}/auth/logout",
+            "body": {"mode": "raw", "raw": "{\"refresh_token\": \"{{refresh_token}}\"}"}
+          }
+        }
+      ]
+    },
+    {
+      "name": "Users",
+      "item": [
+        {
+          "name": "Get Current User",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/users/me"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Rooms",
+      "item": [
+        {
+          "name": "List Rooms",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/rooms"
+          }
+        },
+        {
+          "name": "Create Room",
+          "event": [{"listen": "test", "script": {"exec": ["pm.environment.set('room_id', pm.response.json().id);"]}}],
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": "{{base_url}}/rooms",
+            "body": {"mode": "raw", "raw": "{\"name\": \"Living Room\", \"deadband_temp\": 1.0, \"deadband_hum\": 5.0}"}
+          }
+        },
+        {
+          "name": "Get Room",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/rooms/{{room_id}}"
+          }
+        },
+        {
+          "name": "Update Room",
+          "request": {
+            "method": "PUT",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": "{{base_url}}/rooms/{{room_id}}",
+            "body": {"mode": "raw", "raw": "{\"name\": \"Living Room\", \"deadband_temp\": 1.5, \"deadband_hum\": 5.0}"}
+          }
+        },
+        {
+          "name": "Delete Room",
+          "request": {
+            "method": "DELETE",
+            "url": "{{base_url}}/rooms/{{room_id}}"
+          }
+        },
+        {
+          "name": "Get Desired State",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/rooms/{{room_id}}/desired-state"
+          }
+        },
+        {
+          "name": "Set Desired State - OFF",
+          "request": {
+            "method": "PUT",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": "{{base_url}}/rooms/{{room_id}}/desired-state",
+            "body": {"mode": "raw", "raw": "{\"mode\": \"OFF\", \"manual_override_until\": null}"}
+          }
+        },
+        {
+          "name": "Set Desired State - AUTO target_temp",
+          "request": {
+            "method": "PUT",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": "{{base_url}}/rooms/{{room_id}}/desired-state",
+            "body": {"mode": "raw", "raw": "{\"mode\": \"AUTO\", \"target_temp\": 22.0, \"manual_override_until\": null}"}
+          }
+        },
+        {
+          "name": "Set Desired State - AUTO target_hum",
+          "request": {
+            "method": "PUT",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": "{{base_url}}/rooms/{{room_id}}/desired-state",
+            "body": {"mode": "raw", "raw": "{\"mode\": \"AUTO\", \"target_hum\": 45.0, \"manual_override_until\": null}"}
+          }
+        },
+        {
+          "name": "Set Desired State - AUTO both targets",
+          "request": {
+            "method": "PUT",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": "{{base_url}}/rooms/{{room_id}}/desired-state",
+            "body": {"mode": "raw", "raw": "{\"mode\": \"AUTO\", \"target_temp\": 22.0, \"target_hum\": 45.0, \"manual_override_until\": null}"}
+          }
+        },
+        {
+          "name": "Set Desired State - AUTO indefinite override",
+          "request": {
+            "method": "PUT",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": "{{base_url}}/rooms/{{room_id}}/desired-state",
+            "body": {"mode": "raw", "raw": "{\"mode\": \"AUTO\", \"target_temp\": 22.0, \"manual_override_until\": \"indefinite\"}"}
+          }
+        },
+        {
+          "name": "Set Desired State - AUTO timed override",
+          "request": {
+            "method": "PUT",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": "{{base_url}}/rooms/{{room_id}}/desired-state",
+            "body": {"mode": "raw", "raw": "{\"mode\": \"AUTO\", \"target_temp\": 22.0, \"manual_override_until\": \"2026-12-31T23:59:59Z\"}"}
+          }
+        },
+        {
+          "name": "Set Desired State - Clear override",
+          "request": {
+            "method": "PUT",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": "{{base_url}}/rooms/{{room_id}}/desired-state",
+            "body": {"mode": "raw", "raw": "{\"mode\": \"AUTO\", \"target_temp\": 22.0, \"manual_override_until\": null}"}
+          }
+        }
+      ]
+    },
+    {
+      "name": "Devices",
+      "item": [
+        {
+          "name": "List Devices",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/devices"
+          }
+        },
+        {
+          "name": "List Devices by Room",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/rooms/{{room_id}}/devices"
+          }
+        },
+        {
+          "name": "Create Device - Temp+Heater",
+          "event": [{"listen": "test", "script": {"exec": ["pm.environment.set('device_id', pm.response.json().id);"]}}],
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": "{{base_url}}/devices",
+            "body": {"mode": "raw", "raw": "{\"name\": \"Temp Device\", \"hw_id\": \"hw-dev-temp-001\", \"device_type\": \"physical\", \"sensors\": [\"temperature\"], \"actuators\": [\"heater\"]}"}
+          }
+        },
+        {
+          "name": "Create Device - Hum+Humidifier",
+          "event": [{"listen": "test", "script": {"exec": ["pm.environment.set('device_id', pm.response.json().id);"]}}],
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": "{{base_url}}/devices",
+            "body": {"mode": "raw", "raw": "{\"name\": \"Hum Device\", \"hw_id\": \"hw-dev-hum-001\", \"device_type\": \"physical\", \"sensors\": [\"humidity\"], \"actuators\": [\"humidifier\"]}"}
+          }
+        },
+        {
+          "name": "Create Device - Full Capabilities",
+          "event": [{"listen": "test", "script": {"exec": ["pm.environment.set('device_id', pm.response.json().id);"]}}],
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": "{{base_url}}/devices",
+            "body": {"mode": "raw", "raw": "{\"name\": \"Full Device\", \"hw_id\": \"hw-dev-full-001\", \"device_type\": \"physical\", \"sensors\": [\"temperature\", \"humidity\"], \"actuators\": [\"heater\", \"humidifier\"]}"}
+          }
+        },
+        {
+          "name": "Get Device",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/devices/{{device_id}}"
+          }
+        },
+        {
+          "name": "Update Device - Assign to Room",
+          "request": {
+            "method": "PUT",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": "{{base_url}}/devices/{{device_id}}",
+            "body": {"mode": "raw", "raw": "{\"name\": \"Full Device\", \"room_id\": \"{{room_id}}\"}"}
+          }
+        },
+        {
+          "name": "Update Device - Unassign from Room",
+          "request": {
+            "method": "PUT",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": "{{base_url}}/devices/{{device_id}}",
+            "body": {"mode": "raw", "raw": "{\"name\": \"Full Device\"}"}
+          }
+        },
+        {
+          "name": "Update Device - Rename Only",
+          "request": {
+            "method": "PUT",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": "{{base_url}}/devices/{{device_id}}",
+            "body": {"mode": "raw", "raw": "{\"name\": \"Renamed Device\", \"room_id\": \"{{room_id}}\"}"}
+          }
+        },
+        {
+          "name": "Delete Device",
+          "request": {
+            "method": "DELETE",
+            "url": "{{base_url}}/devices/{{device_id}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Schedules",
+      "item": [
+        {
+          "name": "List Schedules by Room",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/rooms/{{room_id}}/schedules"
+          }
+        },
+        {
+          "name": "Create Schedule",
+          "event": [{"listen": "test", "script": {"exec": ["pm.environment.set('schedule_id', pm.response.json().id);"]}}],
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": "{{base_url}}/rooms/{{room_id}}/schedules",
+            "body": {"mode": "raw", "raw": "{\"name\": \"My Schedule\"}"}
+          }
+        },
+        {
+          "name": "Get Schedule",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/schedules/{{schedule_id}}"
+          }
+        },
+        {
+          "name": "Update Schedule",
+          "request": {
+            "method": "PUT",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": "{{base_url}}/schedules/{{schedule_id}}",
+            "body": {"mode": "raw", "raw": "{\"name\": \"Updated Schedule\"}"}
+          }
+        },
+        {
+          "name": "Activate Schedule",
+          "request": {
+            "method": "PATCH",
+            "url": "{{base_url}}/schedules/{{schedule_id}}/activate"
+          }
+        },
+        {
+          "name": "Deactivate Schedule",
+          "request": {
+            "method": "PATCH",
+            "url": "{{base_url}}/schedules/{{schedule_id}}/deactivate"
+          }
+        },
+        {
+          "name": "Delete Schedule",
+          "request": {
+            "method": "DELETE",
+            "url": "{{base_url}}/schedules/{{schedule_id}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Schedule Periods",
+      "item": [
+        {
+          "name": "List Periods",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/schedules/{{schedule_id}}/periods"
+          }
+        },
+        {
+          "name": "Create Period - AUTO target_temp",
+          "event": [{"listen": "test", "script": {"exec": ["pm.environment.set('period_id', pm.response.json().id);"]}}],
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": "{{base_url}}/schedules/{{schedule_id}}/periods",
+            "body": {"mode": "raw", "raw": "{\"days_of_week\": [1,2,3,4,5], \"start_time\": \"07:00\", \"end_time\": \"09:00\", \"mode\": \"AUTO\", \"target_temp\": 22.0}"}
+          }
+        },
+        {
+          "name": "Create Period - AUTO target_hum",
+          "event": [{"listen": "test", "script": {"exec": ["pm.environment.set('period_id', pm.response.json().id);"]}}],
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": "{{base_url}}/schedules/{{schedule_id}}/periods",
+            "body": {"mode": "raw", "raw": "{\"days_of_week\": [1,2,3,4,5], \"start_time\": \"07:00\", \"end_time\": \"09:00\", \"mode\": \"AUTO\", \"target_hum\": 45.0}"}
+          }
+        },
+        {
+          "name": "Create Period - AUTO both targets",
+          "event": [{"listen": "test", "script": {"exec": ["pm.environment.set('period_id', pm.response.json().id);"]}}],
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": "{{base_url}}/schedules/{{schedule_id}}/periods",
+            "body": {"mode": "raw", "raw": "{\"name\": \"Morning Comfort\", \"days_of_week\": [1,2,3,4,5], \"start_time\": \"07:00\", \"end_time\": \"09:00\", \"mode\": \"AUTO\", \"target_temp\": 22.0, \"target_hum\": 45.0}"}
+          }
+        },
+        {
+          "name": "Create Period - OFF",
+          "event": [{"listen": "test", "script": {"exec": ["pm.environment.set('period_id', pm.response.json().id);"]}}],
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": "{{base_url}}/schedules/{{schedule_id}}/periods",
+            "body": {"mode": "raw", "raw": "{\"days_of_week\": [6,7], \"start_time\": \"10:00\", \"end_time\": \"12:00\", \"mode\": \"OFF\"}"}
+          }
+        },
+        {
+          "name": "Update Period - AUTO target_temp",
+          "request": {
+            "method": "PUT",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": "{{base_url}}/schedule-periods/{{period_id}}",
+            "body": {"mode": "raw", "raw": "{\"days_of_week\": [1,2,3,4,5], \"start_time\": \"07:00\", \"end_time\": \"09:30\", \"mode\": \"AUTO\", \"target_temp\": 22.0}"}
+          }
+        },
+        {
+          "name": "Update Period - AUTO both targets",
+          "request": {
+            "method": "PUT",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": "{{base_url}}/schedule-periods/{{period_id}}",
+            "body": {"mode": "raw", "raw": "{\"name\": \"Morning Comfort\", \"days_of_week\": [1,2,3,4,5], \"start_time\": \"07:00\", \"end_time\": \"09:30\", \"mode\": \"AUTO\", \"target_temp\": 22.0, \"target_hum\": 45.0}"}
+          }
+        },
+        {
+          "name": "Update Period - OFF",
+          "request": {
+            "method": "PUT",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": "{{base_url}}/schedule-periods/{{period_id}}",
+            "body": {"mode": "raw", "raw": "{\"days_of_week\": [6,7], \"start_time\": \"10:00\", \"end_time\": \"12:00\", \"mode\": \"OFF\"}"}
+          }
+        },
+        {
+          "name": "Delete Period",
+          "request": {
+            "method": "DELETE",
+            "url": "{{base_url}}/schedule-periods/{{period_id}}"
+          }
+        }
+      ]
+    }
+  ]
+}

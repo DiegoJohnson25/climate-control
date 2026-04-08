@@ -99,3 +99,19 @@ vet:
 
 build:
 	go build ./api-service/... ./device-service/... ./shared/... ./simulator-service/...
+
+# ── API Tests ─────────────────────────────────────────────────────────────────
+
+# Run full integration test suite — requires a fresh database
+# Usage: make down-hard && make up && make test
+test-api:
+	newman run tests/postman/climate-control-integration.collection.json \
+		-e tests/postman/integration.environment.json \
+		--delay-request 100
+
+# Run smoke tests — repeatable, safe to run against a live database
+# Usage: make smoke
+smoke-api:
+	newman run tests/postman/climate-control-smoke.collection.json \
+		-e tests/postman/smoke.environment.json \
+		--delay-request 100
