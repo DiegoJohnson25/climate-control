@@ -1,0 +1,29 @@
+room_templates:
+
+  # --- noise ---
+  - id: standard-room
+    model:
+      type: noise
+      base_temp: 20.0
+      base_humidity: 50.0
+      noise:
+        temperature: 0.1
+        humidity: 0.5
+
+  - id: warm-room
+    model:
+      type: noise
+      base_temp: 26.0
+      base_humidity: 60.0
+      noise:
+        temperature: 0.1
+        humidity: 0.5
+
+  - id: cold-room
+    model:
+      type: noise
+      base_temp: 15.0
+      base_humidity: 40.0
+      noise:
+        temperature: 0.1
+        humidity: 0.5

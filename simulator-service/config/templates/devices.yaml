@@ -1,0 +1,66 @@
+device_templates:
+
+  # --- sensor only ---
+  - id: climate-sensor
+    sensors: [temperature, humidity]
+    noise:
+      temperature: 0.2
+      humidity: 1.0
+    offset:
+      temperature: 0.0
+      humidity: 0.0
+
+  - id: temp-sensor
+    sensors: [temperature]
+    noise:
+      temperature: 0.2
+    offset:
+      temperature: 0.0
+
+  - id: humidity-sensor
+    sensors: [humidity]
+    noise:
+      humidity: 1.0
+    offset:
+      humidity: 0.0
+
+  - id: air-quality-sensor
+    sensors: [air_quality]
+    noise:
+      air_quality: 5.0
+    offset:
+      air_quality: 0.0
+
+  # --- actuator only ---
+  - id: heater
+    actuators: [heater]
+
+  - id: humidifier
+    actuators: [humidifier]
+
+  # --- combined units ---
+  - id: temp-heater
+    sensors: [temperature]
+    actuators: [heater]
+    noise:
+      temperature: 0.2
+    offset:
+      temperature: 0.0
+
+  - id: humidity-humidifier
+    sensors: [humidity]
+    actuators: [humidifier]
+    noise:
+      humidity: 1.0
+    offset:
+      humidity: 0.0
+
+  - id: climate-controller
+    sensors: [temperature, humidity]
+    actuators: [heater, humidifier]
+    noise:
+      temperature: 0.2
+      humidity: 1.0
+    offset:
+      temperature: 0.0
+      humidity: 0.0

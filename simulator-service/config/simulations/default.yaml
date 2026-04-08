@@ -1,0 +1,19 @@
+simulation:
+  tick_interval_seconds: 5
+
+  user_groups:
+    - count: 1
+      rooms:
+        - template: standard-room
+          name_prefix: living-room
+          count: 1
+          devices:
+            - template: climate-sensor
+              name_prefix: climate-sensor
+              count: 1
+            - template: heater
+              name_prefix: heater
+              count: 1
+            - template: humidifier
+              name_prefix: humidifier
+              count: 1
