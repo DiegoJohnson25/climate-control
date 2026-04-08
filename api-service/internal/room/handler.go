@@ -38,7 +38,7 @@ type updateDesiredStateRequest struct {
 	TargetTemp *float64 `json:"target_temp"`
 	TargetHum  *float64 `json:"target_hum"`
 	// "indefinite", an RFC3339 string, or null (JSON null or key absent = clear override)
-	ManualOverride *string `json:"manual_override"`
+	ManualOverride *string `json:"manual_override_until"`
 }
 
 // -------------------------------------------------------------------------------
