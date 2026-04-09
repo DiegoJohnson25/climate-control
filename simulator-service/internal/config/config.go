@@ -15,6 +15,8 @@ type Config struct {
 	APIURL        string
 	MQTTHost      string
 	MQTTPort      int
+	MQTTUsername  string
+	MQTTPassword  string
 	EmailTemplate string
 	Password      string
 	Simulation    Simulation
@@ -159,6 +161,8 @@ func Load(simulationName string) (*Config, error) {
 		APIURL:        "http://api-service:8080",
 		MQTTHost:      "mosquitto",
 		MQTTPort:      1883,
+		MQTTUsername:  mustGetEnv("MQTT_DEVICE_USERNAME"),
+		MQTTPassword:  mustGetEnv("MQTT_DEVICE_PASSWORD"),
 		EmailTemplate: mustGetEnv("SIMULATOR_EMAIL"),
 		Password:      mustGetEnv("SIMULATOR_PASSWORD"),
 		Simulation:    simulation,

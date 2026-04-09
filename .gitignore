@@ -18,3 +18,7 @@
 
 # Personal reference docs
 /notes/
+
+# Simulator Credential files
+simulator-service/config/credentials/*
+!simulator-service/config/credentials/.gitkeep
