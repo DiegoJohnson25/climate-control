@@ -3,9 +3,10 @@ simulation:
 
   user_groups:
     - count: 1
+      interactive: true
       rooms:
         - template: standard-room
-          name_prefix: living-room
+          name_prefix: standard-room
           count: 1
           devices:
             - template: climate-sensor
