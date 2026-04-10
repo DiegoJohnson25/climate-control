@@ -37,3 +37,11 @@ func (s *Service) Register(ctx context.Context, email, password string) (*models
 func (s *Service) GetByID(ctx context.Context, id uuid.UUID) (*models.User, error) {
 	return s.users.GetByID(ctx, id)
 }
+
+func (s *Service) Delete(ctx context.Context, id uuid.UUID) error {
+	_, err := s.users.GetByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	return s.users.Delete(ctx, id)
+}

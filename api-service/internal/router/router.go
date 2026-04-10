@@ -33,6 +33,7 @@ func Setup(
 
 	protected.POST("/auth/logout", authHandler.Logout)
 	protected.GET("/users/me", userHandler.Me)
+	protected.DELETE("/users/me", userHandler.DeleteMe)
 
 	// Rooms
 	protected.GET("/rooms", roomHandler.List)

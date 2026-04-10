@@ -51,3 +51,7 @@ func (r *Repository) GetByID(ctx context.Context, id uuid.UUID) (*models.User, e
 	}
 	return &usr, nil
 }
+
+func (r *Repository) Delete(ctx context.Context, id uuid.UUID) error {
+	return r.db.WithContext(ctx).Delete(&models.User{}, id).Error
+}
