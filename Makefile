@@ -200,3 +200,14 @@ docker-volumes:
 # Remove unused volumes
 docker-volume-prune:
 	docker volume prune
+
+# ── Mosquitto ────────────────────────────────────────────────────────────────
+
+# Generate mosquitto password file from .env credentials
+# Run this whenever MQTT passwords are changed in .env
+mosquitto-passwd:
+	docker run --rm eclipse-mosquitto:2 sh -c " \
+	  mosquitto_passwd -c -b /tmp/passwd $${MQTT_DEVICE_USERNAME} $${MQTT_DEVICE_PASSWORD} && \
+	  mosquitto_passwd -b /tmp/passwd $${MQTT_DEVICE_SERVICE_USERNAME} $${MQTT_DEVICE_SERVICE_PASSWORD} && \
+	  mosquitto_passwd -b /tmp/passwd healthcheck healthcheck && \
+	  cat /tmp/passwd" | grep -v "^Adding" > deployments/mosquitto/passwd

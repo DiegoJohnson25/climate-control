@@ -51,14 +51,17 @@ services:
 
   mosquitto:
     image: eclipse-mosquitto:2
+    user: root
     volumes:
       - ./deployments/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./deployments/mosquitto/passwd:/mosquitto/config/passwd
+      - ./deployments/mosquitto/acl:/mosquitto/config/acl:ro
       - mosquitto_data:/mosquitto/data
       - mosquitto_logs:/mosquitto/log
     ports:
       - "${MQTT_PORT}:1883"
     healthcheck:
-      test: ["CMD-SHELL", "mosquitto_pub -h localhost -t 'healthcheck' -m 'ping' -q 0 && echo ok"]
+      test: ["CMD-SHELL", "mosquitto_pub -h localhost -t 'healthcheck' -m 'ping' -q 0 -u healthcheck -P healthcheck -i healthcheck-probe && echo ok"]
       interval: 10s
       timeout: 5s
       retries: 5
