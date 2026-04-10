@@ -1,0 +1,43 @@
+# Tests multi-room aggregation and multiple device types per user
+simulation:
+  tick_interval_seconds: 5
+
+  user_groups:
+    - count: 1
+      interactive: true
+      rooms:
+        - template: standard-room
+          name_prefix: living-room
+          count: 1
+          devices:
+            - template: climate-sensor
+              name_prefix: climate-sensor
+              count: 1
+            - template: heater
+              name_prefix: heater
+              count: 1
+            - template: humidifier
+              name_prefix: humidifier
+              count: 1
+
+        - template: warm-room
+          name_prefix: bedroom
+          count: 2
+          devices:
+            - template: temp-sensor
+              name_prefix: temp-sensor
+              count: 1
+            - template: heater
+              name_prefix: heater
+              count: 1
+
+        - template: cold-room
+          name_prefix: bathroom
+          count: 1
+          devices:
+            - template: humidity-sensor
+              name_prefix: humidity-sensor
+              count: 1
+            - template: humidifier
+              name_prefix: humidifier
+              count: 1

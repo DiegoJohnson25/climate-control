@@ -1,0 +1,19 @@
+# Tests telemetry ingestion without any actuators
+# Useful for verifying device-service cache and TimescaleDB writes in isolation
+simulation:
+  tick_interval_seconds: 5
+
+  user_groups:
+    - count: 1
+      interactive: true
+      rooms:
+        - template: standard-room
+          name_prefix: sensor-room
+          count: 1
+          devices:
+            - template: climate-sensor
+              name_prefix: climate-sensor
+              count: 1
+            - template: air-quality-sensor
+              name_prefix: air-quality-sensor
+              count: 1
