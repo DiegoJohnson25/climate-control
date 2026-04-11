@@ -21,8 +21,8 @@ import (
 type RoomState struct {
 	Provisioned provisioning.ProvisionedRoom
 	baseValues  map[string]float64 // sensor type → base value, built once at startup
-	// Phase 3b: CurrentTemp, CurrentHumidity float64
-	// Phase 3b: calculator RoomCalculator
+	// Phase 4: CurrentTemp, CurrentHumidity float64
+	// Phase 4: calculator RoomCalculator
 }
 
 func newRoomState(room provisioning.ProvisionedRoom) *RoomState {

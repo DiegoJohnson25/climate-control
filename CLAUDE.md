@@ -539,7 +539,7 @@ One goroutine per device. Stagger offset = `tickInterval * deviceIndex / totalDe
 
 **Phase 3a (implemented):** `noise` — Gaussian noise around base values. No evolving room state. Value per tick = `base + rand.NormFloat64()*noise_stddev + offset`. Base values live on room model, noise/offset live on device template.
 
-**Phase 3b (planned):**
+**Phase 4 (planned):**
 - `drift` — noise + drift block with per-measurement `rate` and `target`
 - `physics` — noise + physics block with `thermal_mass`, `thermal_conductance`, `external_temp_profile` (type: sinusoidal, mean, amplitude, period_hours)
 
