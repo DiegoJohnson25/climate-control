@@ -4,8 +4,7 @@
 
 A distributed IoT climate control system backend in Go. Two independent services
 communicate via PostgreSQL and MQTT to manage room climate via ESP32 relay devices.
-Fully demonstrable without hardware via a simulator
-service.
+Fully demonstrable without hardware via a simulator service.
 
 ---
 
@@ -21,12 +20,20 @@ service.
 - `feat/api-service-schedules` ✅ — merged to main
   - schedules domain: CRUD + activate/deactivate + periods (11 endpoints)
 - Postman test collections committed to `tests/postman/` ✅
+- `feat/simulator-scaffold` ✅ — merged to main
+  - simulator-service: config loading, provisioning, MQTT client, publish loop
+  - Mosquitto: auth enabled, ACL configured, password file committed
+  - Makefile: refactored with prefix groups, simulator commands, MQTT subscriptions
 
 **Active branch:** `feat/device-service`
 
-**Last thing actually done:** `api-service` fully complete and Postman verified.
-All endpoints working. Postman collections committed. About to start device-service
-and simulator-service (interleaved — see Development phases).
+**Next up:** `feat/device-service-scaffold` — file structure, config loading, cache warm from DB
+
+**Planned branches:**
+- `feat/device-service-scaffold` — file structure, config, cache warm
+- `feat/device-service-ingestion` — MQTT subscription, telemetry parsing, TimescaleDB writes
+- `feat/device-service-control` — control loop, bang-bang logic, command publishing
+- `feat/device-service-listen-notify` — LISTEN/NOTIFY cache invalidation
 
 ---
 
@@ -39,8 +46,8 @@ climate-control/
 │   │   └── main.go
 │   ├── internal/
 │   │   ├── user/
-│   │   │   ├── handler.go        # POST /auth/register, GET /users/me
-│   │   │   ├── service.go        # registration, password hashing
+│   │   │   ├── handler.go        # POST /auth/register, GET /users/me, DELETE /users/me
+│   │   │   ├── service.go        # registration, password hashing, deletion
 │   │   │   ├── repository.go     # GORM — users table
 │   │   │   └── errors.go
 │   │   ├── auth/
@@ -90,10 +97,31 @@ climate-control/
 │   ├── Dockerfile
 │   └── go.mod
 ├── simulator-service/
-│   ├── cmd/main.go
+│   ├── cmd/
+│   │   └── main.go               # flag parsing, run/teardown modes, signal handling
+│   ├── config/
+│   │   ├── templates/
+│   │   │   ├── rooms.yaml        # room templates (noise models)
+│   │   │   └── devices.yaml      # device templates (sensors, actuators, noise, offset)
+│   │   ├── simulations/
+│   │   │   ├── default.yaml      # single user, full capability room
+│   │   │   ├── multi-room.yaml
+│   │   │   ├── multi-user.yaml
+│   │   │   ├── sensor-only.yaml
+│   │   │   └── multi-sensor.yaml
+│   │   └── credentials/          # gitignored, written at runtime for interactive groups
+│   │       └── .gitkeep
 │   ├── internal/
+│   │   ├── api/
+│   │   │   └── client.go         # HTTP client for api-service — extractable
+│   │   ├── config/
+│   │   │   └── config.go         # env + YAML loading, template resolution, validation
 │   │   ├── mqtt/
-│   │   └── scenario/
+│   │   │   └── client.go         # Paho wrapper — Publish, Subscribe, Disconnect
+│   │   ├── provisioning/
+│   │   │   └── provisioning.go   # bootstrap sequence, identity generation, credentials file
+│   │   └── simulator/
+│   │       └── simulator.go      # publish loop, staggered goroutines per device, RoomState
 │   ├── Dockerfile
 │   └── go.mod
 ├── shared/
@@ -114,7 +142,10 @@ climate-control/
 ├── deployments/
 │   ├── docker-compose.services.yml
 │   ├── docker-compose.prod.yml
-│   ├── mosquitto/mosquitto.conf
+│   ├── mosquitto/
+│   │   ├── mosquitto.conf        # auth enabled, passwd + acl file paths
+│   │   ├── passwd                # generated via make mosquitto-passwd, committed
+│   │   └── acl                   # topic permissions per username
 │   └── nginx/nginx.conf
 ├── migrations/
 │   ├── appdb/
@@ -183,13 +214,13 @@ climate-control/
 | Refresh tokens | Redis | go-redis/v9 |
 | Rate limiting | Redis | Applied at router level |
 | MQTT client | Eclipse Paho Go | `device-service` and `simulator-service` only |
-| Broker | Mosquitto | |
+| Broker | Mosquitto 2.x | Auth enabled, ACL per username |
 | App DB | PostgreSQL 17 | Internal port 5432, host port 5433 |
 | Time-series DB | TimescaleDB 2.25.2-pg17 | Internal port 5432, host port 5434 |
 | Cache | In-process memory | `device-service` control loop only |
 | Migrations | golang-migrate | Auto-run on `docker compose up` |
 | Containers | Docker Compose | |
-| Testing | Newman + Postman | `make test` (integration), `make smoke` |
+| Testing | Newman + Postman | `make test-api-integration`, `make test-api-smoke` |
 
 ---
 
@@ -210,8 +241,11 @@ REDIS_PASSWORD=localdev
 REDIS_PORT=6379
 
 MQTT_PORT=1883
-MQTT_DEVICE_SERVICE_PASSWORD=localdev
+MQTT_DEVICE_USERNAME=device
 MQTT_DEVICE_PASSWORD=localdev
+MQTT_DEVICE_SERVICE_USERNAME=device-service
+MQTT_DEVICE_SERVICE_PASSWORD=localdev
+# healthcheck user is hardcoded as username=healthcheck password=healthcheck — not in .env
 
 JWT_SECRET=localdev-replace-with-32-plus-chars-in-prod
 JWT_ACCESS_TTL_MINUTES=15
@@ -225,7 +259,7 @@ SIMULATOR_PASSWORD=localdev
 
 **Important:** Internal Docker port for both postgres and timescaledb is `5432`.
 Connection strings inside Docker always use `port=5432`, `host=postgres`,
-`host=timescaledb`, `host=redis`.
+`host=timescaledb`, `host=redis`, `host=mosquitto`.
 
 ---
 
@@ -450,48 +484,270 @@ type Service struct {
 
 ---
 
-## Dependency directions (non-negotiable)
+## Simulator architecture (implemented)
+
+### Config system
+
+Two-file separation: infrastructure (env vars) vs simulation definition (YAML).
+
+**Env vars** — `SIMULATOR_EMAIL`, `SIMULATOR_PASSWORD`, `MQTT_DEVICE_USERNAME`, `MQTT_DEVICE_PASSWORD`
+
+**YAML config** — volume mounted at `/app/config` from `simulator-service/config/` on host.
+Three directories: `templates/`, `simulations/`, `credentials/`
+
+**Template files** (shared, defined once):
+- `config/templates/rooms.yaml` — room templates with model type and base values
+- `config/templates/devices.yaml` — device templates with sensors, actuators, noise, offset
+
+**Simulation files** (reference templates by id):
+- `config/simulations/{name}.yaml` — topology: user groups, room counts, device counts
+- Selected via `--simulation=name` flag, defaults to `default`
+- Can define `template_overrides` to override shared templates locally
+
+**Config loading flow:** env → load room/device templates → load simulation file → merge overrides → resolve template references → validate (no duplicate name_prefix) → return flat `Config` struct. Template concept is fully dissolved after resolution — downstream packages never see template ids.
+
+### Identity generation (deterministic, simulation-scoped)
 
 ```
-auth     → user       (login needs user lookup)
-device   → room       (ownership check, capability queries)
-schedule → room       (ownership check, capability validation on activation)
+email:  sim-{simulation_name}-user-{000}@{domain}
+rooms:  {name_prefix}-{local_index}
+devices: {room_name}-{device_prefix}-{local_index}
+hw_ids:  sim-{simulation_name}-{user_idx}-{room_idx}-{device_idx}
 ```
 
-Never reversed. `room` never imports `device` or `schedule`.
-`device` never imports `schedule`. `schedule` never imports `device`.
+Simulation name embedded in all identities — different simulations never collide in the DB. Identities are fully deterministic from config so restarts are idempotent without stored state.
+
+### Provisioning (idempotency)
+
+On startup: login-first auth (register only on 401), fetch existing rooms and devices once per user into lookup maps, create rooms/devices handling 409 via map lookup. `AssignDevice` called unconditionally — idempotent. Credentials file written to `/app/config/credentials/{sim-name}.txt` for interactive user groups only.
+
+### Teardown
+
+`--mode=teardown` flag. Regenerates same deterministic credentials from config, logs in as each user, calls `DELETE /api/v1/users/me`. Cascade handles all rooms, devices, sensors, actuators, schedules, desired_states. TimescaleDB sensor_readings rows for those sensor UUIDs become orphaned (no FK by design) — acceptable.
+
+**Workflow:**
+- Normal restart → idempotency handles it, no teardown needed
+- Config value changes (base_temp, noise, tick interval) → just restart
+- Topology changes (sensors, actuators, room structure) → teardown first
+- Changed config before teardown → `make down-hard && make up`
+
+### Publish loop
+
+One goroutine per device. Stagger offset = `tickInterval * deviceIndex / totalDevices` — spreads all publishes evenly across tick window, eliminates thundering herd at scale. Actuator-only devices subscribe to cmd topic but publish no telemetry. Signal handling via SIGTERM/SIGINT → context cancel → all goroutines exit cleanly → WaitGroup unblocks → process exits.
+
+### Room model types
+
+**Phase 3a (implemented):** `noise` — Gaussian noise around base values. No evolving room state. Value per tick = `base + rand.NormFloat64()*noise_stddev + offset`. Base values live on room model, noise/offset live on device template.
+
+**Phase 3b (planned):**
+- `drift` — noise + drift block with per-measurement `rate` and `target`
+- `physics` — noise + physics block with `thermal_mass`, `thermal_conductance`, `external_temp_profile` (type: sinusoidal, mean, amplitude, period_hours)
+
+All types share `base_temp`, `base_humidity`, and noise block. Calculator interface assigned once at startup based on model type. Runtime state (`RoomState`) is separate from config and evolves per tick independently.
+
+### api/client.go
+
+Outbound HTTP client for api-service. Unexported in Phase 3a, designed to be extracted to its own package later. Methods: `Register`, `Login`, `DeleteMe`, `CreateRoom`, `ListRooms`, `CreateDevice`, `ListDevices`, `AssignDevice`. `ErrConflict` sentinel for 409 responses.
 
 ---
 
-## HTTP status code conventions (locked in)
+## Mosquitto configuration (implemented)
 
-- `400` — malformed request: bad JSON, missing required fields, wrong types,
-  `ShouldBindJSON` failure, bad path UUID
-- `404` — not found or unauthorized (ownership gate — no information leakage)
-- `409` — state conflict: duplicate name, already active/inactive, period overlap,
-  capability conflict on device removal
-- `422` — semantically invalid request: AUTO mode with no targets, invalid time range
-  (`end <= start`), days out of 1–7, unrecognized sensor/actuator type,
-  `resolveManualOverride` parse failure
-- `500` — internal server error (never leak details)
+Auth enabled — `allow_anonymous false`. Three users:
+- `device` — shared by all simulators and ESP32s. Publish `devices/+/telemetry`, subscribe `devices/+/cmd`
+- `device-service` — subscribe `devices/+/telemetry`, publish `devices/+/cmd`
+- `healthcheck` — hardcoded username and password both `healthcheck`, publish `healthcheck` topic only
+
+Password file at `deployments/mosquitto/passwd` — generated via `make mosquitto-passwd`, committed to repo. Regenerate after any MQTT password change in `.env`.
+
+ACL file at `deployments/mosquitto/acl` — plain text, no extension, no comments (Mosquitto parser sensitive to formatting).
+
+Healthcheck credentials hardcoded in compose healthcheck command — not in `.env`. Avoids leaking that the healthcheck password matches other credentials.
 
 ---
 
-## GORM style (locked in)
+## Control loop (device-service — to be implemented)
 
-- Chain `.Error` directly: `r.db.WithContext(ctx).Where(...).First(&rm).Error`
-- No `result` variable — `result.Error` pattern not used
-- Pointer returns: repo methods return `*Model, error` — nil pointer on not found
-- `Save` for updates — full replacement, always fetch before mutating
-- Handler owns field filtering via request structs — keeps `Save` safe
-- Empty slices initialized explicitly — never return nil slices in responses
+**Trigger:** time-windowed evaluation, not event-driven per message. Each room has its own ticker goroutine. Staggered across rooms same as simulator publish stagger — avoids thundering herd on DB and MQTT at scale.
 
-**Responses:**
-- Never serialize full model structs — use `gin.H` response helper functions
-- No `user_id` in resource responses — implicit from JWT
-- Sensors/actuators serialized as `[]string` of type names, not model objects
-- Timestamps formatted as RFC3339 UTC in responses
-- `start_time`/`end_time` formatted as `"HH:MM"` in responses
+**Latest readings cache:** incoming telemetry updates `LatestReadings map[string]TimestampedReading` on the room cache. Control loop ticker reads latest values, filters stale readings (older than ~3 tick intervals), computes average per sensor type, runs bang-bang logic.
+
+**Bang-bang with hysteresis:**
+```
+current_value = avg(all sensors of type in room from LatestReadings)
+if current_value < target - deadband  →  publish cmd state=true
+if current_value > target + deadband  →  publish cmd state=false
+else                                  →  hold (no command published)
+```
+
+**RoomCache struct:**
+```go
+type RoomCache struct {
+    DeadbandTemp      float64
+    DeadbandHumidity  float64
+    DesiredState      DesiredState
+    ActivePeriods     []SchedulePeriod
+    UserTimezone      string
+    ActuatorStates    map[string]bool
+    LastActivePeriod  *SchedulePeriod
+    LastPeriodEndTime time.Time
+    LatestReadings    map[string]TimestampedReading  // sensor type → {value, time}
+}
+```
+
+Grace period: if no active period found and time is within 60 seconds of last active period's `end_time`, use last period's targets — prevents relay toggling at period boundaries.
+
+---
+
+## MQTT payload conventions (locked in)
+
+**Telemetry** (device → device-service, QoS 1):
+```json
+{
+    "hw_id": "sim-default-0-0-0",
+    "readings": [
+        {"type": "temperature", "value": 21.5},
+        {"type": "humidity", "value": 45.0}
+    ]
+}
+```
+
+**Command** (device-service → device, QoS 2):
+```json
+{
+    "actuator_type": "heater",
+    "state": true
+}
+```
+
+---
+
+## Days of week convention
+
+ISO 8601: Monday = 1, Sunday = 7.
+Go's `time.Weekday()` uses Sunday = 0 — must convert explicitly.
+Write a test case specifically for Sunday.
+
+---
+
+## Measurement unit conventions
+
+| Type | Unit |
+|---|---|
+| `temperature` | Celsius |
+| `humidity` | % relative humidity (0-100) |
+| `air_quality` | PPM |
+
+---
+
+## MQTT conventions (locked in)
+
+- Telemetry: `devices/{hw_id}/telemetry` — QoS 1
+- Commands: `devices/{hw_id}/cmd` — QoS 2
+- Topics keyed on `hw_id`, NOT database UUID
+- device-service resolves `hw_id → device_id → sensor_id` internally from cache
+- Devices never need to know their DB-assigned UUIDs
+- Only `device-service`, `simulator-service`, ESP32s connect to Mosquitto
+- Paho aliased as `pahomqtt` in mqtt packages to avoid package name collision
+
+---
+
+## LISTEN/NOTIFY conventions (to be implemented in device-service)
+
+Channels:
+- `room_config_changed` — payload: room_id string. Fire after rooms deadband update.
+- `desired_state_changed` — payload: room_id string. Fire after desired_state update.
+- `schedule_changed` — payload: room_id string. Fire after schedule activate/deactivate
+  or period create/update/delete.
+
+Rules:
+- `api-service` fires NOTIFY only, never LISTEN
+- `device-service` LISTENs on a dedicated persistent pgx connection (not pool)
+- NOTIFY inside transactions fires only on commit — correct behaviour by design
+- TODO stubs already in place in room, device, and schedule repositories
+
+---
+
+## Sensor readings conventions (locked in)
+
+- `room_id` snapshotted at write time by device-service
+- `room_id` nullable — null when device was unassigned at time of reading
+- No FK on `sensor_id` or `room_id` — integrity enforced by device-service
+- Two indexes: `(sensor_id, time DESC)` and `(room_id, time DESC)`
+- Raw values stored always — sensor offset (future feature) applied at query time
+- Multiple readings from one telemetry message written in one transaction (same timestamp)
+
+---
+
+## Layering conventions
+
+| Layer | Responsibility |
+|---|---|
+| `handler.go` | HTTP only — parse request, validate input, call service, write response |
+| `service.go` | Business logic — orchestrate repository calls, enforce rules |
+| `repository.go` | Data access only — all DB/Redis queries live here |
+| `errors.go` | Sentinel errors for the domain |
+| `pg_errors.go` | Unexported `isUniqueViolation` helper, one per package |
+
+**Chain:** `handler → service → repository`. Handlers never call repositories directly.
+
+**Context:** `context.Context` is the first parameter on all repository and service
+methods. Handlers pass `c.Request.Context()`. GORM calls always use `.WithContext(ctx)`.
+
+**Error handling in handlers:**
+- `c.JSON` + `return` — NOT `c.AbortWithStatusJSON` (Abort is for middleware only)
+- `ShouldBindJSON` not `BindJSON`
+- Never leak internal error details in 500 responses
+- Sentinel errors translated to specific HTTP status codes
+- `ErrCapabilityConflict` responses include a `hint` field
+
+---
+
+## Docker Compose
+
+- `docker-compose.yml` — infrastructure only
+- `deployments/docker-compose.services.yml` — application services overlay
+- All services have healthchecks, `depends_on` uses `condition: service_healthy`
+- Dockerfile `context: ..` points to repo root so `shared/` is accessible
+- `replace` directive in `api-service/go.mod` for local `shared` module resolution
+- Simulator service: `SIMULATOR_SIMULATION` env var selects simulation file, command in compose overrides Dockerfile CMD
+
+## Makefile
+
+Refactored with consistent prefix groups. Full cheatsheet in personal notes. Key groups:
+
+```
+up / down / down-hard / rebuild      — project lifecycle
+infra- prefix                        — infrastructure only
+rebuild- prefix                      — individual service rebuild
+logs- prefix                         — service logs
+shell- prefix                        — container shell access
+go- prefix                           — go vet, go build
+test-api- prefix                     — Newman test suites
+simulator- prefix                    — simulator lifecycle (see simulator commands)
+mqtt- prefix                         — mosquitto_sub subscriptions for debugging
+docker- prefix                       — raw Docker utilities (ps, stats, prune, volumes)
+mosquitto-passwd                     — regenerate passwd file from .env
+```
+
+---
+
+## Postman test collections
+
+```
+tests/postman/
+├── climate-control-integration.collection.json   # full suite, ordered, requires make down-hard first
+├── climate-control-smoke.collection.json         # repeatable CI/CD suite, uses $timestamp for isolation
+├── climate-control-manual.collection.json        # dev tool, auth at collection level, no scripts
+├── integration.environment.json
+├── smoke.environment.json
+└── manual.environment.json
+```
+
+- `make test-api-integration` — runs integration suite via Newman (requires fresh DB)
+- `make test-api-smoke` — runs smoke suite via Newman (safe against live DB)
+- Manual collection: auth set at collection level (`Bearer {{access_token}}`),
+  Login test script auto-populates `access_token` and `refresh_token`
 
 ---
 
@@ -503,6 +759,7 @@ POST   /api/v1/auth/login
 POST   /api/v1/auth/refresh
 POST   /api/v1/auth/logout
 GET    /api/v1/users/me
+DELETE /api/v1/users/me
 
 GET    /api/v1/rooms
 POST   /api/v1/rooms
@@ -575,202 +832,48 @@ All responses JSON. All timestamps UTC.
 
 ---
 
-## Control loop (device-service — Phase 3)
-
-Event-driven — triggered by incoming MQTT telemetry. Bang-bang control with hysteresis.
-
-```go
-type RoomCache struct {
-    DeadbandTemp      float64
-    DeadbandHumidity  float64
-    DesiredState      DesiredState
-    ActivePeriods     []SchedulePeriod
-    UserTimezone      string
-    ActuatorStates    map[string]bool
-    LastActivePeriod  *SchedulePeriod
-    LastPeriodEndTime time.Time
-}
-```
-
-Control logic:
-```
-current_value = avg(all sensors of type in room)
-if current_value < target - deadband  →  ON
-if current_value > target + deadband  →  OFF
-else                                  →  hold (hysteresis)
-```
-
-MQTT telemetry payload from device:
-```json
-{
-    "hw_id": "esp32-abc123",
-    "readings": [
-        {"type": "temperature", "value": 21.5},
-        {"type": "humidity", "value": 45.0}
-    ]
-}
-```
-
-device-service resolves: `hw_id → device_id → sensor_id` from cache, writes to
-TimescaleDB with both `sensor_id` and `room_id` snapshotted.
-
-Grace period: if no active period found and time is within 60 seconds of last active
-period's end_time, use last period's targets — prevents relay toggling at period
-boundaries.
-
----
-
-## Days of week convention
-
-ISO 8601: Monday = 1, Sunday = 7.
-Go's `time.Weekday()` uses Sunday = 0 — must convert explicitly.
-Write a test case specifically for Sunday.
-
----
-
-## Measurement unit conventions
-
-| Type | Unit |
-|---|---|
-| `temperature` | Celsius |
-| `humidity` | % relative humidity (0-100) |
-| `air_quality` | PPM |
-
----
-
-## MQTT conventions (locked in)
-
-- Telemetry: `devices/{hw_id}/telemetry` — QoS 1
-- Commands: `devices/{hw_id}/cmd` — QoS 2
-- Topics keyed on `hw_id`, NOT database UUID
-- device-service resolves `hw_id → device_id → sensor_id` internally from cache
-- Devices never need to know their DB-assigned UUIDs
-- Only `device-service`, `simulator-service`, ESP32s connect to Mosquitto
-
----
-
-## LISTEN/NOTIFY conventions (to be implemented in Phase 3)
-
-Channels:
-- `room_config_changed` — payload: room_id string. Fire after rooms deadband update.
-- `desired_state_changed` — payload: room_id string. Fire after desired_state update.
-- `schedule_changed` — payload: room_id string. Fire after schedule activate/deactivate
-  or period create/update/delete.
-
-Rules:
-- `api-service` fires NOTIFY only, never LISTEN
-- `device-service` LISTENs on a dedicated persistent pgx connection (not pool)
-- NOTIFY inside transactions fires only on commit — correct behaviour by design
-- TODO stubs already in place in room, device, and schedule repositories
-
----
-
-## Sensor readings conventions (locked in)
-
-- `room_id` snapshotted at write time by device-service
-- `room_id` nullable — null when device was unassigned at time of reading
-- No FK on `sensor_id` or `room_id` — integrity enforced by device-service
-- Two indexes: `(sensor_id, time DESC)` and `(room_id, time DESC)`
-- Raw values stored always — sensor offset (future feature) applied at query time
-
----
-
-## Layering conventions
-
-| Layer | Responsibility |
-|---|---|
-| `handler.go` | HTTP only — parse request, validate input, call service, write response |
-| `service.go` | Business logic — orchestrate repository calls, enforce rules |
-| `repository.go` | Data access only — all DB/Redis queries live here |
-| `errors.go` | Sentinel errors for the domain |
-| `pg_errors.go` | Unexported `isUniqueViolation` helper, one per package |
-
-**Chain:** `handler → service → repository`. Handlers never call repositories directly.
-
-**Context:** `context.Context` is the first parameter on all repository and service
-methods. Handlers pass `c.Request.Context()`. GORM calls always use `.WithContext(ctx)`.
-
-**Error handling in handlers:**
-- `c.JSON` + `return` — NOT `c.AbortWithStatusJSON` (Abort is for middleware only)
-- `ShouldBindJSON` not `BindJSON`
-- Never leak internal error details in 500 responses
-- Sentinel errors translated to specific HTTP status codes
-- `ErrCapabilityConflict` responses include a `hint` field
-
----
-
-## Docker Compose
-
-- `docker-compose.yml` — infrastructure only
-- `deployments/docker-compose.services.yml` — application services overlay
-- All services have healthchecks, `depends_on` uses `condition: service_healthy`
-- Dockerfile `context: ..` points to repo root so `shared/` is accessible
-- `replace` directive in `api-service/go.mod` for local `shared` module resolution
-
-## Makefile targets
+## Dependency directions (non-negotiable)
 
 ```
-up                  — bring all services up (no rebuild)
-rebuild             — bring all services up with --build
-down                — bring all services down
-down-hard           — bring all services down, wipe volumes
-infra               — infrastructure only
-infra-down          — infrastructure down
-infra-down-hard     — infrastructure down, wipe volumes
-rebuild-api         — rebuild api-service only
-rebuild-device      — rebuild device-service only
-rebuild-simulator   — rebuild simulator-service only
-logs                — tail all logs
-logs-api            — tail api-service logs
-logs-device         — tail device-service logs
-logs-postgres       — tail postgres logs
-logs-redis          — tail redis logs
-logs-mqtt           — tail mosquitto logs
-shell-api           — shell into api-service container
-shell-postgres      — psql into postgres
-shell-timescale     — psql into timescaledb
-shell-redis         — redis-cli into redis
-ps                  — show container status
-build-api           — build api-service image directly
-vet                 — go vet all modules
-build               — go build all modules
-test-api            — run full integration suite (requires fresh DB)
-smoke-api           — run smoke tests (repeatable, safe against live DB)
+auth     → user       (login needs user lookup)
+device   → room       (ownership check, capability queries)
+schedule → room       (ownership check, capability validation on activation)
 ```
+
+Never reversed. `room` never imports `device` or `schedule`.
+`device` never imports `schedule`. `schedule` never imports `device`.
 
 ---
 
-## Postman test collections
+## HTTP status code conventions (locked in)
 
-```
-tests/postman/
-├── climate-control-integration.collection.json   # full suite, ordered, requires make down-hard first
-├── climate-control-smoke.collection.json         # repeatable CI/CD suite, uses $timestamp for isolation
-├── climate-control-manual.collection.json        # dev tool, auth at collection level, no scripts
-├── integration.environment.json
-├── smoke.environment.json
-└── manual.environment.json
-```
-
-- `make test-api` — runs integration suite via Newman
-- `make smoke-api` — runs smoke suite via Newman
-- Manual collection: auth set at collection level (`Bearer {{access_token}}`),
-  Login test script auto-populates `access_token` and `refresh_token`
+- `400` — malformed request: bad JSON, missing required fields, wrong types,
+  `ShouldBindJSON` failure, bad path UUID
+- `404` — not found or unauthorized (ownership gate — no information leakage)
+- `409` — state conflict: duplicate name, already active/inactive, period overlap,
+  capability conflict on device removal
+- `422` — semantically invalid request: AUTO mode with no targets, invalid time range
+  (`end <= start`), days out of 1–7, unrecognized sensor/actuator type,
+  `resolveManualOverride` parse failure
+- `500` — internal server error (never leak details)
 
 ---
 
-## Simulator service (Phase 3 — interleaved with device-service)
+## GORM style (locked in)
 
-**Phase 3a — minimal simulator (build first, needed to test device-service):**
-1. Register user using `SIMULATOR_EMAIL`/`SIMULATOR_PASSWORD` (or login if exists)
-2. POST devices via REST API with `device_type = 'simulator'`
-3. Assign devices to rooms via PUT
-4. Publish MQTT telemetry loop using `hw_id` from API response
-5. device-service resolves `hw_id → sensor_id` from cache
+- Chain `.Error` directly: `r.db.WithContext(ctx).Where(...).First(&rm).Error`
+- No `result` variable — `result.Error` pattern not used
+- Pointer returns: repo methods return `*Model, error` — nil pointer on not found
+- `Save` for updates — full replacement, always fetch before mutating
+- Handler owns field filtering via request structs — keeps `Save` safe
+- Empty slices initialized explicitly — never return nil slices in responses
 
-**Phase 3b — scenario simulator (build after device-service is complete):**
-- Configurable scenarios (temperature drift, humidity spike, etc.)
-- Useful for demo and manual testing
+**Responses:**
+- Never serialize full model structs — use `gin.H` response helper functions
+- No `user_id` in resource responses — implicit from JWT
+- Sensors/actuators serialized as `[]string` of type names, not model objects
+- Timestamps formatted as RFC3339 UTC in responses
+- `start_time`/`end_time` formatted as `"HH:MM"` in responses
 
 ---
 
@@ -780,10 +883,14 @@ tests/postman/
 |---|---|---|
 | 1 | Repo scaffold, Docker Compose, DB schema | ✅ Done |
 | 2 | `api-service` — all REST endpoints | ✅ Done |
-| 3 | `device-service` + minimal `simulator-service` (interleaved) | 🔄 Next |
-| 4 | Scenario simulator — configurable telemetry, demo scenarios | Pending |
-| 5 | CI, architecture diagrams, README, tests | Pending |
-| Later | NGINX load balancing, cloud deployment | Pending |
+| 3a | `simulator-service` scaffold | ✅ Done |
+| 3b | `device-service` scaffold — cache warm | 🔄 Next |
+| 3c | `device-service` ingestion — MQTT + TimescaleDB writes | Pending |
+| 3d | `device-service` control loop — bang-bang, commands | Pending |
+| 3e | `device-service` LISTEN/NOTIFY — cache invalidation | Pending |
+| 4 | Scenario simulator — drift and physics room models | Pending |
+| 5 | CI, architecture diagrams, README, NGINX, tests | Pending |
+| Later | Cloud deployment | Pending |
 
 ---
 
@@ -796,3 +903,6 @@ tests/postman/
 - Admin API — `DELETE /admin/devices/:hw_id`, `POST /admin/devices/:hw_id/blacklist`,
   `GET /admin/devices` — separate auth, future branch
 - Web client and Android app (currently Postman)
+- NGINX load balancing for api-service (Phase 5)
+- Multiple device-service instances with shared MQTT subscriptions (Phase 5)
+- Prometheus metrics + Grafana dashboard (Phase 5)
