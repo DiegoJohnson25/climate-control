@@ -15,7 +15,7 @@ import (
 )
 
 // -----------------------------------------------------------------------------
-// Runtime state — separate from config, evolves per tick in Phase 3b
+// Runtime state — separate from config, evolves per tick in Phase 4
 // -----------------------------------------------------------------------------
 
 type RoomState struct {
