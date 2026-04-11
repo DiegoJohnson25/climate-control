@@ -1,0 +1,13 @@
+# device-service — subscribe to telemetry, publish commands
+user device-service
+topic read devices/+/telemetry
+topic write devices/+/cmd
+
+# device — publish telemetry, subscribe to commands
+user device
+topic write devices/+/telemetry
+topic read devices/+/cmd
+
+# healthcheck — minimal access
+user healthcheck
+topic write healthcheck

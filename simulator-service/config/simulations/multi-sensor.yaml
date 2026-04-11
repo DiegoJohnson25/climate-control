@@ -1,0 +1,19 @@
+# Tests averaging logic — multiple sensors of the same type in one room
+# device-service should average readings across all temperature sensors
+simulation:
+  tick_interval_seconds: 5
+
+  user_groups:
+    - count: 1
+      interactive: true
+      rooms:
+        - template: standard-room
+          name_prefix: lab-room
+          count: 1
+          devices:
+            - template: temp-sensor
+              name_prefix: temp-sensor
+              count: 3
+            - template: heater
+              name_prefix: heater
+              count: 1

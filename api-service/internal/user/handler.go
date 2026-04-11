@@ -66,3 +66,17 @@ func (h *Handler) Me(c *gin.Context) {
 		"created_at": usr.CreatedAt,
 	})
 }
+
+func (h *Handler) DeleteMe(c *gin.Context) {
+	userID := c.MustGet(ctxkeys.UserID).(uuid.UUID)
+
+	if err := h.svc.Delete(c.Request.Context(), userID); err != nil {
+		if errors.Is(err, ErrNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": ErrNotFound.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+	c.Status(http.StatusNoContent)
+}

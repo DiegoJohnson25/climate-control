@@ -37,6 +37,19 @@ services:
       dockerfile: device-service/Dockerfile
 
   simulator-service:
+    command: ["./bin/simulator-service", "--simulation=${SIMULATOR_SIMULATION:-default}"]
     build:
       context: .
       dockerfile: simulator-service/Dockerfile
+    environment:
+      - SIMULATOR_EMAIL=${SIMULATOR_EMAIL}
+      - SIMULATOR_PASSWORD=${SIMULATOR_PASSWORD}
+      - MQTT_DEVICE_USERNAME=${MQTT_DEVICE_USERNAME}
+      - MQTT_DEVICE_PASSWORD=${MQTT_DEVICE_PASSWORD}
+    volumes:
+      - ./simulator-service/config:/app/config
+    depends_on:
+      api-service:
+        condition: service_healthy
+      mosquitto:
+        condition: service_healthy
