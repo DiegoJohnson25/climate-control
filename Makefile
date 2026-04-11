@@ -211,3 +211,33 @@ mosquitto-passwd:
 	  mosquitto_passwd -b /tmp/passwd $${MQTT_DEVICE_SERVICE_USERNAME} $${MQTT_DEVICE_SERVICE_PASSWORD} && \
 	  mosquitto_passwd -b /tmp/passwd healthcheck healthcheck && \
 	  cat /tmp/passwd" | grep -v "^Adding" > deployments/mosquitto/passwd
+
+# ── MQTT subscriptions ────────────────────────────────────────────────────────
+
+# Subscribe to all telemetry from all devices
+mqtt-telemetry:
+	docker exec -it climate-control-mosquitto-1 mosquitto_sub \
+	  -h localhost -t 'devices/+/telemetry' \
+	  -u $${MQTT_DEVICE_SERVICE_USERNAME} -P $${MQTT_DEVICE_SERVICE_PASSWORD} \
+	  -v
+
+# Subscribe to all commands to all devices
+mqtt-commands:
+	docker exec -it climate-control-mosquitto-1 mosquitto_sub \
+	  -h localhost -t 'devices/+/cmd' \
+	  -u $${MQTT_DEVICE_SERVICE_USERNAME} -P $${MQTT_DEVICE_SERVICE_PASSWORD} \
+	  -v
+
+# Subscribe to all topics
+mqtt-all:
+	docker exec -it climate-control-mosquitto-1 mosquitto_sub \
+	  -h localhost -t 'devices/#' \
+	  -u $${MQTT_DEVICE_SERVICE_USERNAME} -P $${MQTT_DEVICE_SERVICE_PASSWORD} \
+	  -v
+
+# Subscribe to a specific device — Usage: make mqtt-device HW_ID=sim-default-0-0-0
+mqtt-device:
+	docker exec -it climate-control-mosquitto-1 mosquitto_sub \
+	  -h localhost -t 'devices/$(HW_ID)/#' \
+	  -u $${MQTT_DEVICE_SERVICE_USERNAME} -P $${MQTT_DEVICE_SERVICE_PASSWORD} \
+	  -v

@@ -10,13 +10,19 @@ import (
 	"syscall"
 
 	"github.com/DiegoJohnson25/climate-control/simulator-service/internal/config"
+	"github.com/DiegoJohnson25/climate-control/simulator-service/internal/mqtt"
 	"github.com/DiegoJohnson25/climate-control/simulator-service/internal/provisioning"
+	"github.com/DiegoJohnson25/climate-control/simulator-service/internal/simulator"
 )
 
 func main() {
 	mode := flag.String("mode", "run", "mode: run or teardown")
-	simulation := flag.String("simulation", "default", "simulation config to run")
+	simulation := flag.String("simulation", "", "simulation config to run")
 	flag.Parse()
+
+	if *simulation == "" {
+		log.Fatal("--simulation flag is required")
+	}
 
 	cfg, err := config.Load(*simulation)
 	if err != nil {
@@ -47,17 +53,34 @@ func run(cfg *config.Config) error {
 
 	log.Printf("provisioning complete — %d user(s) ready", len(users))
 
+	mqttClient, err := mqtt.NewClient(cfg)
+	if err != nil {
+		return fmt.Errorf("mqtt: %w", err)
+	}
+	defer mqttClient.Disconnect()
+
 	ctx, cancel := context.WithCancel(context.Background())
-	_ = ctx
 	defer cancel()
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 
-	// TODO: start simulator.Run(ctx, cfg, users, mqttClient) here
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- simulator.Run(ctx, cfg, users, mqttClient)
+	}()
 
-	<-quit
-	log.Println("shutting down")
+	log.Printf("simulator running — tick interval: %ds", cfg.Simulation.TickIntervalSeconds)
+
+	select {
+	case <-quit:
+		log.Println("shutting down")
+		cancel()
+	case err := <-errCh:
+		return fmt.Errorf("simulator: %w", err)
+	}
+
+	<-errCh
 	return nil
 }
 
