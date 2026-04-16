@@ -42,6 +42,9 @@ rebuild-api:
 rebuild-device:
 	$(COMPOSE_ALL) up --build -d device-service
 
+restart-device:
+	$(COMPOSE_ALL) restart device-service
+
 rebuild-simulator:
 	$(COMPOSE_ALL) up --build -d simulator-service
 

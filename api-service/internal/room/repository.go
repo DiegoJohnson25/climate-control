@@ -107,29 +107,47 @@ func (r *Repository) UpdateDesiredState(ctx context.Context, ds *models.DesiredS
 // -------------------------------------------------------------------------------
 
 // HasTemperatureCapability returns true if the room has at least one device with
-// both a temperature sensor and a heater actuator.
+// a temperature sensor AND at least one device with a heater actuator.
+// The sensor and actuator may be on different devices.
 func (r *Repository) HasTemperatureCapability(ctx context.Context, roomID uuid.UUID) (bool, error) {
-	var count int64
+	var has bool
 	err := r.db.WithContext(ctx).Raw(`
-		SELECT COUNT(*)
-		FROM devices d
-		JOIN sensors s    ON s.device_id = d.id AND s.measurement_type = 'temperature'
-		JOIN actuators a  ON a.device_id = d.id AND a.actuator_type    = 'heater'
-		WHERE d.room_id = ?
-	`, roomID).Scan(&count).Error
-	return count > 0, err
+		SELECT (
+			EXISTS (
+				SELECT 1 FROM devices d
+				JOIN sensors s ON s.device_id = d.id
+				WHERE d.room_id = ? AND s.measurement_type = 'temperature'
+			)
+			AND
+			EXISTS (
+				SELECT 1 FROM devices d
+				JOIN actuators a ON a.device_id = d.id
+				WHERE d.room_id = ? AND a.actuator_type = 'heater'
+			)
+		)
+	`, roomID, roomID).Scan(&has).Error
+	return has, err
 }
 
 // HasHumidityCapability returns true if the room has at least one device with
-// both a humidity sensor and a humidifier actuator.
+// a humidity sensor AND at least one device with a humidifier actuator.
+// The sensor and actuator may be on different devices.
 func (r *Repository) HasHumidityCapability(ctx context.Context, roomID uuid.UUID) (bool, error) {
-	var count int64
+	var has bool
 	err := r.db.WithContext(ctx).Raw(`
-		SELECT COUNT(*)
-		FROM devices d
-		JOIN sensors s    ON s.device_id = d.id AND s.measurement_type = 'humidity'
-		JOIN actuators a  ON a.device_id = d.id AND a.actuator_type    = 'humidifier'
-		WHERE d.room_id = ?
-	`, roomID).Scan(&count).Error
-	return count > 0, err
+		SELECT (
+			EXISTS (
+				SELECT 1 FROM devices d
+				JOIN sensors s ON s.device_id = d.id
+				WHERE d.room_id = ? AND s.measurement_type = 'humidity'
+			)
+			AND
+			EXISTS (
+				SELECT 1 FROM devices d
+				JOIN actuators a ON a.device_id = d.id
+				WHERE d.room_id = ? AND a.actuator_type = 'humidifier'
+			)
+		)
+	`, roomID, roomID).Scan(&has).Error
+	return has, err
 }
