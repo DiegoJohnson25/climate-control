@@ -1,0 +1,77 @@
+# simulator-service/config/simulations/cache-test.yaml
+#
+# Designed for comprehensive cache warm testing.
+# Covers: multiple rooms, multiple device configurations, multiple sensor types,
+# rooms with and without actuators, rooms with multiple devices.
+#
+# Interactive user group — credentials written to /app/config/credentials/cache-test.txt
+# Use these credentials to log in via Postman and manually add:
+#   - Active schedules with periods (to verify ActivePeriods warm)
+#   - Manual override on desired state (to verify ManualOverrideUntil warm)
+#   - Desired state targets in AUTO mode (to verify Targets warm)
+#
+# After adding schedules/overrides via Postman, restart device-service and
+# check logs for correct cache warm output.
+
+simulation:
+  tick_interval_seconds: 10
+
+  user_groups:
+    - interactive: true
+      count: 1
+      rooms:
+        # Room 1: full capability — climate-controller (temp + humidity sensors + heater + humidifier)
+        # Use this room to test: full ActuatorHwIDs, full Targets map, full desired state
+        - template: standard-room
+          name_prefix: full-capability
+          count: 1
+          devices:
+            - template: climate-controller
+              name_prefix: climate-controller
+              count: 1
+
+        # Room 2: temp only — temp sensor + heater (separate devices)
+        # Use this room to test: partial ActuatorHwIDs (heater only, no humidifier)
+        - template: standard-room
+          name_prefix: temp-only
+          count: 1
+          devices:
+            - template: temp-sensor
+              name_prefix: temp-sensor
+              count: 1
+            - template: heater
+              name_prefix: heater
+              count: 1
+
+        # Room 3: humidity only — humidity sensor + humidifier (separate devices)
+        # Use this room to test: partial ActuatorHwIDs (humidifier only, no heater)
+        - template: standard-room
+          name_prefix: humidity-only
+          count: 1
+          devices:
+            - template: humidity-sensor
+              name_prefix: humidity-sensor
+              count: 1
+            - template: humidifier
+              name_prefix: humidifier
+              count: 1
+
+        # Room 4: sensors only — no actuators
+        # Use this room to test: empty ActuatorHwIDs, no control loop commands
+        - template: standard-room
+          name_prefix: sensor-only
+          count: 1
+          devices:
+            - template: climate-sensor
+              name_prefix: climate-sensor
+              count: 1
+
+        # Room 5: multi-sensor — two temp-heater units in same room
+        # Use this room to test: multiple hw_ids per sensor type and actuator type
+        - template: warm-room
+          name_prefix: multi-sensor
+          count: 1
+          devices:
+            - template: temp-heater
+              name_prefix: temp-heater
+              count: 2
