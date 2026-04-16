@@ -204,22 +204,31 @@ func (r *Repository) HasOverlap(
 // PeriodsHaveCapability returns true if every AUTO period in the schedule that
 // has a target_temp or target_humidity can be satisfied by the room's current
 // devices. Called at activation time.
+// The sensor and actuator for each capability may be on different devices.
 func (r *Repository) PeriodsHaveCapability(ctx context.Context, scheduleID, roomID uuid.UUID) (bool, error) {
 	// Check if any period requires temperature control but the room lacks it.
+	// The room has temperature capability if it has at least one device with a
+	// temperature sensor AND at least one device with a heater — on any devices.
 	var tempConflict int64
 	err := r.db.WithContext(ctx).Raw(`
 		SELECT COUNT(*)
 		FROM schedule_periods sp
 		WHERE sp.schedule_id  = ?
 		AND   sp.target_temp IS NOT NULL
-		AND   NOT EXISTS (
-			SELECT 1
-			FROM devices d
-			JOIN sensors s   ON s.device_id = d.id AND s.measurement_type = 'temperature'
-			JOIN actuators a ON a.device_id = d.id AND a.actuator_type    = 'heater'
-			WHERE d.room_id = ?
+		AND   NOT (
+			EXISTS (
+				SELECT 1 FROM devices d
+				JOIN sensors s ON s.device_id = d.id
+				WHERE d.room_id = ? AND s.measurement_type = 'temperature'
+			)
+			AND
+			EXISTS (
+				SELECT 1 FROM devices d
+				JOIN actuators a ON a.device_id = d.id
+				WHERE d.room_id = ? AND a.actuator_type = 'heater'
+			)
 		)
-	`, scheduleID, roomID).Scan(&tempConflict).Error
+	`, scheduleID, roomID, roomID).Scan(&tempConflict).Error
 	if err != nil {
 		return false, err
 	}
@@ -228,20 +237,28 @@ func (r *Repository) PeriodsHaveCapability(ctx context.Context, scheduleID, room
 	}
 
 	// Check if any period requires humidity control but the room lacks it.
+	// The room has humidity capability if it has at least one device with a
+	// humidity sensor AND at least one device with a humidifier — on any devices.
 	var humConflict int64
 	err = r.db.WithContext(ctx).Raw(`
 		SELECT COUNT(*)
 		FROM schedule_periods sp
 		WHERE sp.schedule_id     = ?
 		AND   sp.target_hum IS NOT NULL
-		AND   NOT EXISTS (
-			SELECT 1
-			FROM devices d
-			JOIN sensors s   ON s.device_id = d.id AND s.measurement_type = 'humidity'
-			JOIN actuators a ON a.device_id = d.id AND a.actuator_type    = 'humidifier'
-			WHERE d.room_id = ?
+		AND   NOT (
+			EXISTS (
+				SELECT 1 FROM devices d
+				JOIN sensors s ON s.device_id = d.id
+				WHERE d.room_id = ? AND s.measurement_type = 'humidity'
+			)
+			AND
+			EXISTS (
+				SELECT 1 FROM devices d
+				JOIN actuators a ON a.device_id = d.id
+				WHERE d.room_id = ? AND a.actuator_type = 'humidifier'
+			)
 		)
-	`, scheduleID, roomID).Scan(&humConflict).Error
+	`, scheduleID, roomID, roomID).Scan(&humConflict).Error
 	if err != nil {
 		return false, err
 	}

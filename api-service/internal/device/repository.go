@@ -238,33 +238,51 @@ func (r *Repository) HasCapabilityConflictAfterRemoval(ctx context.Context, room
 }
 
 // hasTemperatureCapabilityAfterRemoval returns true if the room still has at least
-// one device (other than deviceID) with both a temperature sensor and heater.
+// one device (other than deviceID) with a temperature sensor AND at least one
+// device (other than deviceID) with a heater actuator.
+// The sensor and actuator may be on different devices.
 func (r *Repository) hasTemperatureCapabilityAfterRemoval(ctx context.Context, roomID, deviceID uuid.UUID) (bool, error) {
-	var count int64
+	var has bool
 	err := r.db.WithContext(ctx).Raw(`
-		SELECT COUNT(*)
-		FROM devices d
-		JOIN sensors s   ON s.device_id = d.id AND s.measurement_type = 'temperature'
-		JOIN actuators a ON a.device_id = d.id AND a.actuator_type    = 'heater'
-		WHERE d.room_id = ?
-		AND   d.id      != ?
-	`, roomID, deviceID).Scan(&count).Error
-	return count > 0, err
+		SELECT (
+			EXISTS (
+				SELECT 1 FROM devices d
+				JOIN sensors s ON s.device_id = d.id
+				WHERE d.room_id = ? AND d.id != ? AND s.measurement_type = 'temperature'
+			)
+			AND
+			EXISTS (
+				SELECT 1 FROM devices d
+				JOIN actuators a ON a.device_id = d.id
+				WHERE d.room_id = ? AND d.id != ? AND a.actuator_type = 'heater'
+			)
+		)
+	`, roomID, deviceID, roomID, deviceID).Scan(&has).Error
+	return has, err
 }
 
 // hasHumidityCapabilityAfterRemoval returns true if the room still has at least
-// one device (other than deviceID) with both a humidity sensor and humidifier.
+// one device (other than deviceID) with a humidity sensor AND at least one
+// device (other than deviceID) with a humidifier actuator.
+// The sensor and actuator may be on different devices.
 func (r *Repository) hasHumidityCapabilityAfterRemoval(ctx context.Context, roomID, deviceID uuid.UUID) (bool, error) {
-	var count int64
+	var has bool
 	err := r.db.WithContext(ctx).Raw(`
-		SELECT COUNT(*)
-		FROM devices d
-		JOIN sensors s   ON s.device_id = d.id AND s.measurement_type = 'humidity'
-		JOIN actuators a ON a.device_id = d.id AND a.actuator_type    = 'humidifier'
-		WHERE d.room_id = ?
-		AND   d.id      != ?
-	`, roomID, deviceID).Scan(&count).Error
-	return count > 0, err
+		SELECT (
+			EXISTS (
+				SELECT 1 FROM devices d
+				JOIN sensors s ON s.device_id = d.id
+				WHERE d.room_id = ? AND d.id != ? AND s.measurement_type = 'humidity'
+			)
+			AND
+			EXISTS (
+				SELECT 1 FROM devices d
+				JOIN actuators a ON a.device_id = d.id
+				WHERE d.room_id = ? AND d.id != ? AND a.actuator_type = 'humidifier'
+			)
+		)
+	`, roomID, deviceID, roomID, deviceID).Scan(&has).Error
+	return has, err
 }
 
 // desiredStateHasConflict returns true if the room's desired_state has a target
