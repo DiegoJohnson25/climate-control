@@ -1,3 +1,7 @@
+// Package api is the simulator-service's HTTP client for the api-service. It
+// wraps register/login and the room and device endpoints used during
+// provisioning. The client is idempotent at the caller level — callers inspect
+// ErrConflict and fall back to lookup where appropriate.
 package api
 
 import (
@@ -22,9 +26,9 @@ func NewClient(baseURL string) *Client {
 	}
 }
 
-// -----------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
 // Response types
-// -----------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
 
 type AuthResponse struct {
 	AccessToken string `json:"access_token"`
@@ -41,15 +45,15 @@ type DeviceResponse struct {
 	HwID string `json:"hw_id"`
 }
 
-// -----------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
 // Sentinel errors
-// -----------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
 
 var ErrConflict = fmt.Errorf("conflict")
 
-// -----------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
 // Auth
-// -----------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
 
 func (c *Client) Register(email, password string) error {
 	body := map[string]string{"email": email, "password": password}
@@ -93,9 +97,9 @@ func (c *Client) DeleteMe(token string) error {
 	return nil
 }
 
-// -----------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
 // Rooms
-// -----------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
 
 func (c *Client) CreateRoom(token, name string) (string, error) {
 	body := map[string]string{"name": name}
@@ -133,9 +137,9 @@ func (c *Client) ListRooms(token string) ([]RoomResponse, error) {
 	return rooms, nil
 }
 
-// -----------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
 // Devices
-// -----------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
 
 func (c *Client) CreateDevice(token, name, hwID string, sensors, actuators []string) (string, error) {
 	body := map[string]any{
@@ -191,9 +195,9 @@ func (c *Client) AssignDevice(token, name, deviceID, roomID string) error {
 	return nil
 }
 
-// -----------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
 // HTTP helpers
-// -----------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
 
 func (c *Client) post(path, token string, body any) (*http.Response, error) {
 	return c.do(http.MethodPost, path, token, body)

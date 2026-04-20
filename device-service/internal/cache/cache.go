@@ -1,3 +1,8 @@
+// Package cache provides the in-memory store for device-service.
+// Store.mu protects the rooms and devices maps; per-object fields are protected
+// by each object's own mutex. RoomCache exposes its Mu for caller-managed
+// locking across multi-field reads; DeviceCache uses an unexported mu and
+// exposes GetRoomID and SetRoomID for safe access to its only mutable field.
 package cache
 
 import (
@@ -84,7 +89,8 @@ type DeviceCache struct {
 	Actuators map[string]ActuatorEntry // actuator_type    → entry
 }
 
-// GetRoomID returns the device's current room assignment safely.
+// GetRoomID returns the device's current room assignment.
+// This method is safe for concurrent use.
 func (dc *DeviceCache) GetRoomID() *uuid.UUID {
 	dc.mu.RLock()
 	defer dc.mu.RUnlock()
@@ -92,6 +98,7 @@ func (dc *DeviceCache) GetRoomID() *uuid.UUID {
 }
 
 // SetRoomID updates the device's room assignment.
+// This method is safe for concurrent use.
 func (dc *DeviceCache) SetRoomID(roomID *uuid.UUID) {
 	dc.mu.Lock()
 	defer dc.mu.Unlock()
@@ -126,16 +133,16 @@ func NewStore() *Store {
 	}
 }
 
-// Room returns a pointer to the RoomCache for the given room ID.
-// Returns nil if not found. Callers must acquire Mu before accessing fields.
+// Room returns the RoomCache for the given room ID, or nil if not found.
+// Callers must acquire Mu before accessing fields of the returned cache.
 func (s *Store) Room(roomID uuid.UUID) *RoomCache {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.rooms[roomID]
 }
 
-// Device returns a pointer to the DeviceCache for the given hw_id.
-// Returns nil if not found.
+// Device returns the DeviceCache for the given hw_id, or nil if not found.
+// This method is safe for concurrent use.
 func (s *Store) Device(hwID string) *DeviceCache {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -144,6 +151,7 @@ func (s *Store) Device(hwID string) *DeviceCache {
 
 // AddRoom inserts a new RoomCache into the store. Called during cache warm
 // and on room_created stream events.
+// This method is safe for concurrent use.
 func (s *Store) AddRoom(roomID uuid.UUID, rc *RoomCache) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -153,6 +161,7 @@ func (s *Store) AddRoom(roomID uuid.UUID, rc *RoomCache) {
 // DeleteRoom removes a RoomCache from the store. Called on room_deleted
 // stream events. Any goroutines holding a pointer to the room continue
 // using it safely — the object remains in memory until GC'd.
+// This method is safe for concurrent use.
 func (s *Store) DeleteRoom(roomID uuid.UUID) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -161,6 +170,7 @@ func (s *Store) DeleteRoom(roomID uuid.UUID) {
 
 // AddDevice inserts a new DeviceCache into the store. Called during cache
 // warm and on device_changed stream events.
+// This method is safe for concurrent use.
 func (s *Store) AddDevice(hwID string, dc *DeviceCache) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -169,6 +179,7 @@ func (s *Store) AddDevice(hwID string, dc *DeviceCache) {
 
 // DeleteDevice removes a DeviceCache from the store. Called on device_changed
 // stream events when a device is deleted.
+// This method is safe for concurrent use.
 func (s *Store) DeleteDevice(hwID string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -177,6 +188,7 @@ func (s *Store) DeleteDevice(hwID string) {
 
 // RoomIDs returns all currently cached room IDs. Called once at startup by
 // the scheduler to spin up per-room ticker goroutines.
+// This method is safe for concurrent use.
 func (s *Store) RoomIDs() []uuid.UUID {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -187,8 +199,9 @@ func (s *Store) RoomIDs() []uuid.UUID {
 	return ids
 }
 
-// OwnsRoom returns true if this instance is responsible for the given room.
+// OwnsRoom reports whether this instance is responsible for the given room.
 // Phase 3: always returns true — single instance owns all rooms.
+//
 // TODO Phase 6: replace with Kafka partition ownership check.
 // murmur2(room_id) % numPartitions must be in assignedPartitions.
 // assignedPartitions is populated by OnPartitionsAssigned /
@@ -198,6 +211,7 @@ func (s *Store) OwnsRoom(_ uuid.UUID) bool {
 }
 
 // DeviceHwIDs returns all currently cached device hw_ids.
+// This method is safe for concurrent use.
 func (s *Store) DeviceHwIDs() []string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

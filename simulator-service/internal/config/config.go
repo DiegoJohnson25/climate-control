@@ -1,3 +1,7 @@
+// Package config loads the simulator's runtime configuration — shared room and
+// device templates, a simulation-specific YAML file selected via the
+// --simulation flag, and environment variables. Template overrides declared in
+// the simulation file win on id collision.
 package config
 
 import (
@@ -7,9 +11,9 @@ import (
 	"github.com/goccy/go-yaml"
 )
 
-// -----------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
 // Output types
-// -----------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
 
 type Config struct {
 	APIURL        string
@@ -59,9 +63,9 @@ type Device struct {
 	Offset     map[string]float64
 }
 
-// -----------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
 // Raw YAML types
-// -----------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
 
 type rawRoomTemplates struct {
 	RoomTemplates []rawRoomTemplate `yaml:"room_templates"`
@@ -126,10 +130,13 @@ type rawDevice struct {
 	Count      int    `yaml:"count"`
 }
 
-// -----------------------------------------------------------------------------
-// Load — the single entry point for config
-// -----------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Load
+// ---------------------------------------------------------------------------
 
+// Load reads the templates and simulation file, applies simulation-local
+// overrides, resolves template references into concrete structs, and returns a
+// validated Config.
 func Load(simulationName string) (*Config, error) {
 	roomTemplates, err := loadRoomTemplates("/app/config/templates/rooms.yaml")
 	if err != nil {
@@ -171,9 +178,9 @@ func Load(simulationName string) (*Config, error) {
 	}, nil
 }
 
-// -----------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
 // YAML loaders
-// -----------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
 
 func loadRoomTemplates(path string) (map[string]rawRoomTemplate, error) {
 	data, err := os.ReadFile(path)
@@ -219,9 +226,9 @@ func loadSimulation(path string) (*rawSimulation, error) {
 	return &raw, nil
 }
 
-// -----------------------------------------------------------------------------
-// Override merging — simulation-local overrides win on id collision
-// -----------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Override merging
+// ---------------------------------------------------------------------------
 
 func applyRoomOverrides(base map[string]rawRoomTemplate, overrides []rawRoomTemplate) map[string]rawRoomTemplate {
 	if len(overrides) == 0 {
@@ -251,9 +258,9 @@ func applyDeviceOverrides(base map[string]rawDeviceTemplate, overrides []rawDevi
 	return merged
 }
 
-// -----------------------------------------------------------------------------
-// Resolution — dissolves template references into concrete structs
-// -----------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Resolution
+// ---------------------------------------------------------------------------
 
 func resolveSimulation(name string, raw rawSimulationBlock, roomTpls map[string]rawRoomTemplate, devTpls map[string]rawDeviceTemplate) (Simulation, error) {
 	groups := make([]UserGroup, 0, len(raw.UserGroups))
@@ -310,9 +317,9 @@ func resolveSimulation(name string, raw rawSimulationBlock, roomTpls map[string]
 	}, nil
 }
 
-// -----------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
 // Validation
-// -----------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
 
 func validateSimulation(sim Simulation) error {
 	for i, group := range sim.UserGroups {
@@ -335,9 +342,9 @@ func validateSimulation(sim Simulation) error {
 	return nil
 }
 
-// -----------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
 // Env helpers
-// -----------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
 
 func mustGetEnv(key string) string {
 	v := os.Getenv(key)

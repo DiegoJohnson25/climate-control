@@ -1,3 +1,4 @@
+// Package config loads api-service configuration from environment variables.
 package config
 
 import (
@@ -31,6 +32,8 @@ type Config struct {
 	APIPort int
 }
 
+// Load reads environment variables into a Config. Panics if any int-valued
+// variable is missing or malformed.
 func Load() Config {
 	return Config{
 		PostgresUser:        os.Getenv("POSTGRES_USER"),

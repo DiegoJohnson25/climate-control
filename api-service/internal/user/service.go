@@ -1,3 +1,5 @@
+// Package user provides HTTP handlers, service logic, and repository access
+// for the users domain.
 package user
 
 import (

@@ -1,3 +1,5 @@
+// Package router wires api-service domain handlers onto a Gin engine and
+// applies the auth middleware chain.
 package router
 
 import (
@@ -10,6 +12,8 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// Setup constructs a Gin engine with all api-service routes registered.
+// Protected routes require a valid access token via authMiddleware.
 func Setup(
 	authHandler *auth.Handler,
 	authMiddleware *auth.Service,

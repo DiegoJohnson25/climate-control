@@ -18,15 +18,7 @@ import (
 )
 
 func main() {
-	// ---------------------------------------------------------------------------
-	// Config
-	// ---------------------------------------------------------------------------
-
 	cfg := config.Load()
-
-	// ---------------------------------------------------------------------------
-	// Connections
-	// ---------------------------------------------------------------------------
 
 	db, err := connect.Postgres(cfg.PostgresUser, cfg.PostgresPassword, cfg.PostgresDB)
 	if err != nil {
@@ -50,22 +42,12 @@ func main() {
 	}
 	log.Println("mqtt: connected")
 
-	// ---------------------------------------------------------------------------
-	// Cache warm
-	// ---------------------------------------------------------------------------
-
 	store := cache.NewStore()
 	appRepo := appdb.NewRepository(db)
 	if err := appRepo.WarmCache(store); err != nil {
 		log.Fatalf("cache warm: %v", err)
 	}
 	logging.LogSummary(store)
-	// logging.LogFullStore(store)
-	// logging.LogDevices(store)
-
-	// ---------------------------------------------------------------------------
-	// Telemetry Ingestion
-	// ---------------------------------------------------------------------------
 
 	metricsRepo := metricsdb.NewRepository(metricsPool)
 	source := mqtt.NewSource(mqttClient)
@@ -82,12 +64,8 @@ func main() {
 	// TODO Phase 3d: start control loop / scheduler
 	// TODO Phase 3e: start Redis stream consumer
 
-	// suppress unused variable warning — rdb unused until Phase 3e
+	// rdb unused until Phase 3e
 	_ = rdb
-
-	// ---------------------------------------------------------------------------
-	// Signal handling
-	// ---------------------------------------------------------------------------
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)

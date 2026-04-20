@@ -1,3 +1,6 @@
+// Package ingestion provides transport-agnostic telemetry processing for
+// device-service. Transports implement Source to deliver messages; Process
+// handles cache updates and TimescaleDB writes regardless of origin.
 package ingestion
 
 import (
@@ -20,8 +23,6 @@ type Ingestor struct {
 	stale   time.Duration
 }
 
-// NewIngestor constructs an Ingestor with the given source, store, metrics
-// repository, and stale reading threshold.
 func NewIngestor(source Source, store *cache.Store, metrics *metricsdb.Repository, stale time.Duration) *Ingestor {
 	return &Ingestor{
 		source:  source,

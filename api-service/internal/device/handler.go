@@ -17,9 +17,9 @@ func NewHandler(svc *Service) *Handler {
 	return &Handler{svc: svc}
 }
 
-// -------------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
 // Request types
-// -------------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
 
 type createDeviceRequest struct {
 	Name          string   `json:"name"           binding:"required"`
@@ -34,9 +34,9 @@ type updateDeviceRequest struct {
 	RoomID *uuid.UUID `json:"room_id"`
 }
 
-// -------------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
 // Handlers
-// -------------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
 
 func (h *Handler) List(c *gin.Context) {
 	userID := c.MustGet(ctxkeys.UserID).(uuid.UUID)
@@ -111,7 +111,6 @@ func (h *Handler) Create(c *gin.Context) {
 		return
 	}
 
-	// Default device_type to physical if not provided.
 	if req.DeviceType == "" {
 		req.DeviceType = "physical"
 	}
@@ -220,9 +219,9 @@ func (h *Handler) Delete(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
-// -------------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
 // Helpers
-// -------------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
 
 func deviceResponse(dev *DeviceWithCapabilities) gin.H {
 	sensorTypes := make([]string, len(dev.Sensors))

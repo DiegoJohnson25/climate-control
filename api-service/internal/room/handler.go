@@ -19,9 +19,9 @@ func NewHandler(svc *Service) *Handler {
 	return &Handler{svc: svc}
 }
 
-// -------------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
 // Request types
-// -------------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
 
 type roomRequest struct {
 	Name         string   `json:"name"          binding:"required"`
@@ -41,9 +41,9 @@ type updateDesiredStateRequest struct {
 	ManualOverride *string `json:"manual_override_until"`
 }
 
-// -------------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
 // Room CRUD
-// -------------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
 
 func (h *Handler) List(c *gin.Context) {
 	userID := c.MustGet(ctxkeys.UserID).(uuid.UUID)
@@ -157,9 +157,9 @@ func (h *Handler) Delete(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
-// -------------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
 // Desired state
-// -------------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
 
 func (h *Handler) GetDesiredState(c *gin.Context) {
 	userID := c.MustGet(ctxkeys.UserID).(uuid.UUID)
@@ -198,10 +198,6 @@ func (h *Handler) UpdateDesiredState(c *gin.Context) {
 		return
 	}
 
-	// Resolve manual_override → *time.Time before passing to service.
-	// nil pointer   = key absent or JSON null → clear override (nil stored in DB)
-	// "indefinite"  → indefiniteOverride sentinel
-	// RFC3339 string → parsed timestamp
 	overrideUntil, err := resolveManualOverride(req.ManualOverride)
 	if err != nil {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": ErrInvalidOverride.Error()})
@@ -233,9 +229,9 @@ func (h *Handler) UpdateDesiredState(c *gin.Context) {
 	c.JSON(http.StatusOK, desiredStateResponse(ds))
 }
 
-// -------------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
 // Helpers
-// -------------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
 
 func roomResponse(rm *models.Room) gin.H {
 	return gin.H{
@@ -259,8 +255,7 @@ func desiredStateResponse(ds models.DesiredState) gin.H {
 		"updated_at":            ds.UpdatedAt,
 	}
 
-	// Surface the indefinite sentinel as the string "indefinite" in responses
-	// so clients don't need to know the raw timestamp value.
+	// surface the indefinite sentinel as a readable string for clients
 	if ds.ManualOverrideUntil != nil && ds.ManualOverrideUntil.Equal(indefiniteOverride) {
 		resp["manual_override_until"] = "indefinite"
 	}

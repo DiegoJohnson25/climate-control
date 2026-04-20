@@ -1,3 +1,5 @@
+// Package metricsdb provides write-only access to the TimescaleDB instance.
+// Read access is handled exclusively by api-service.
 package metricsdb
 
 import (

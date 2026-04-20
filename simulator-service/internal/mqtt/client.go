@@ -1,3 +1,6 @@
+// Package mqtt wraps the Paho MQTT client for the simulator-service, exposing
+// connect, publish, subscribe, and disconnect with 10 s timeouts and
+// auto-reconnect enabled.
 package mqtt
 
 import (
@@ -22,8 +25,6 @@ func NewClient(cfg *config.Config) (*Client, error) {
 	opts.SetAutoReconnect(true)
 	opts.SetMaxReconnectInterval(30 * time.Second)
 	opts.SetConnectionLostHandler(func(_ pahomqtt.Client, err error) {
-		// connection lost is handled by auto-reconnect
-		// logging here would be done via a passed-in logger in a future refactor
 		_ = err
 	})
 

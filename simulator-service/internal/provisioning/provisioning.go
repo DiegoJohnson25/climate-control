@@ -1,3 +1,8 @@
+// Package provisioning bootstraps simulator users, rooms, and devices against
+// the api-service. It is idempotent: Run logs in first and only registers on
+// 401, and treats 409 responses from room/device creation as "already exists"
+// and falls back to lookup. Interactive user groups emit a credentials file
+// under /app/config/credentials for manual login.
 package provisioning
 
 import (
@@ -11,9 +16,9 @@ import (
 	"github.com/DiegoJohnson25/climate-control/simulator-service/internal/config"
 )
 
-// -----------------------------------------------------------------------------
-// Provisioned types — immutable after Run returns
-// -----------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Provisioned types
+// ---------------------------------------------------------------------------
 
 type ProvisionedDevice struct {
 	HwID   string
@@ -31,10 +36,13 @@ type ProvisionedUser struct {
 	Rooms []ProvisionedRoom
 }
 
-// -----------------------------------------------------------------------------
-// Run — the single entry point for provisioning
-// -----------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Run
+// ---------------------------------------------------------------------------
 
+// Run provisions every user group in cfg, returning a ProvisionedUser per user
+// with its rooms and devices. Callers pass the result to simulator.Run, which
+// uses it to drive per-device publish loops.
 func Run(cfg *config.Config) ([]ProvisionedUser, error) {
 	client := api.NewClient(cfg.APIURL)
 	domain := emailDomain(cfg.EmailTemplate)
@@ -60,7 +68,6 @@ func Run(cfg *config.Config) ([]ProvisionedUser, error) {
 				}
 			}
 
-			// fetch existing rooms and devices once per user
 			existingRooms, err := client.ListRooms(token)
 			if err != nil {
 				return nil, fmt.Errorf("list rooms for user %s: %w", email, err)
@@ -106,9 +113,9 @@ func Run(cfg *config.Config) ([]ProvisionedUser, error) {
 	return users, nil
 }
 
-// -----------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
 // Room and device provisioning
-// -----------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
 
 func provisionRooms(client *api.Client, token, simName string, userIdx int, roomDefs []config.Room, roomsByName, devicesByHwID map[string]string) ([]ProvisionedRoom, error) {
 	var rooms []ProvisionedRoom
@@ -186,9 +193,9 @@ func provisionDevices(client *api.Client, token, simName string, userIdx, roomId
 	return devices, nil
 }
 
-// -----------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
 // Identity generation
-// -----------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
 
 func generateEmail(simName string, userIdx int, domain string) string {
 	return fmt.Sprintf("sim-%s-user-%03d@%s", simName, userIdx, domain)
@@ -206,9 +213,9 @@ func emailDomain(emailTemplate string) string {
 	return parts[1]
 }
 
-// -----------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
 // Credentials file
-// -----------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
 
 type provisionedUserWithCreds struct {
 	email    string

@@ -32,7 +32,6 @@ type Source struct {
 	client *Client
 }
 
-// NewSource constructs an MQTT Source using an already-connected Client.
 func NewSource(client *Client) *Source {
 	return &Source{client: client}
 }

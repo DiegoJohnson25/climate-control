@@ -8,6 +8,9 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// Middleware returns a Gin handler that validates the bearer access token on
+// the request and sets ctxkeys.UserID on the context. Requests without a valid
+// token are aborted with 401.
 func (s *Service) Middleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		header := c.GetHeader("Authorization")

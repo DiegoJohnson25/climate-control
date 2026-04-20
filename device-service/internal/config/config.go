@@ -1,3 +1,6 @@
+// Package config loads device-service configuration from environment variables.
+// Internal Docker hostnames and ports are hardcoded in the connect package;
+// only credentials and tunables live here.
 package config
 
 import (
@@ -29,6 +32,8 @@ type Config struct {
 	StaleThreshold time.Duration
 }
 
+// Load reads environment variables into a Config. Panics if any variable
+// marked with mustGetEnv is unset.
 func Load() Config {
 	staleSeconds := getEnvInt("CONTROL_STALE_THRESHOLD_SECONDS", 90)
 

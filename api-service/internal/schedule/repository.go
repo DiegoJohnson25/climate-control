@@ -18,9 +18,9 @@ func NewRepository(db *gorm.DB) *Repository {
 	return &Repository{db: db}
 }
 
-// -------------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
 // Schedule methods
-// -------------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
 
 // Create inserts a new schedule row.
 func (r *Repository) Create(ctx context.Context, sched *models.Schedule) error {
@@ -74,11 +74,9 @@ func (r *Repository) Delete(ctx context.Context, id uuid.UUID) error {
 }
 
 // Activate atomically deactivates the currently active schedule for the room
-// (if any) and activates the target schedule. Fires a pg_notify stub for
-// device-service cache invalidation.
+// (if any) and activates the target schedule.
 func (r *Repository) Activate(ctx context.Context, scheduleID, roomID uuid.UUID) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// Deactivate the currently active schedule for this room, if any.
 		err := tx.Model(&models.Schedule{}).
 			Where("room_id = ? AND is_active = true AND id != ?", roomID, scheduleID).
 			Update("is_active", false).Error
@@ -86,29 +84,24 @@ func (r *Repository) Activate(ctx context.Context, scheduleID, roomID uuid.UUID)
 			return err
 		}
 
-		// Activate the target schedule.
 		err = tx.Model(&models.Schedule{}).
 			Where("id = ?", scheduleID).
 			Update("is_active", true).Error
 		if err != nil {
 			if isUniqueViolation(err) {
-				// Partial unique index violation — another schedule is already active
-				// for this room. Should not happen given the deactivation above, but
-				// guard against a race.
+				// partial unique index race — deactivation above lost to a concurrent activation
 				return ErrAlreadyActive
 			}
 			return err
 		}
 
-		// TODO: notify device-service of schedule change.
-		// tx.Exec("SELECT pg_notify('schedule_changed', ?)", roomID.String())
+		// TODO Phase 3e: events.NotifyScheduleChanged(roomID) via Redis XADD.
 
 		return nil
 	})
 }
 
 // Deactivate sets is_active = false on the given schedule.
-// Fires a pg_notify stub for device-service cache invalidation.
 func (r *Repository) Deactivate(ctx context.Context, scheduleID, roomID uuid.UUID) error {
 	err := r.db.WithContext(ctx).Model(&models.Schedule{}).
 		Where("id = ?", scheduleID).
@@ -117,15 +110,14 @@ func (r *Repository) Deactivate(ctx context.Context, scheduleID, roomID uuid.UUI
 		return err
 	}
 
-	// TODO: notify device-service of schedule change.
-	// r.db.WithContext(ctx).Exec("SELECT pg_notify('schedule_changed', ?)", roomID.String())
+	// TODO Phase 3e: events.NotifyScheduleChanged(roomID) via Redis XADD.
 
 	return nil
 }
 
-// -------------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
 // Schedule period methods
-// -------------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
 
 // CreatePeriod inserts a new schedule period row.
 func (r *Repository) CreatePeriod(ctx context.Context, period *models.SchedulePeriod) error {
@@ -170,9 +162,9 @@ func (r *Repository) DeletePeriod(ctx context.Context, periodID uuid.UUID) error
 	return r.db.WithContext(ctx).Delete(&models.SchedulePeriod{}, periodID).Error
 }
 
-// -------------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
 // Validation queries
-// -------------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
 
 // HasOverlap returns true if any existing period in the schedule shares at least
 // one day with the candidate period and has an overlapping time range.
@@ -201,14 +193,11 @@ func (r *Repository) HasOverlap(
 	return count > 0, nil
 }
 
-// PeriodsHaveCapability returns true if every AUTO period in the schedule that
+// PeriodsHaveCapability reports whether every AUTO period in the schedule that
 // has a target_temp or target_humidity can be satisfied by the room's current
-// devices. Called at activation time.
-// The sensor and actuator for each capability may be on different devices.
+// devices. Called at activation time. The sensor and actuator for each
+// capability may be on different devices in the same room.
 func (r *Repository) PeriodsHaveCapability(ctx context.Context, scheduleID, roomID uuid.UUID) (bool, error) {
-	// Check if any period requires temperature control but the room lacks it.
-	// The room has temperature capability if it has at least one device with a
-	// temperature sensor AND at least one device with a heater — on any devices.
 	var tempConflict int64
 	err := r.db.WithContext(ctx).Raw(`
 		SELECT COUNT(*)
@@ -236,9 +225,6 @@ func (r *Repository) PeriodsHaveCapability(ctx context.Context, scheduleID, room
 		return false, nil
 	}
 
-	// Check if any period requires humidity control but the room lacks it.
-	// The room has humidity capability if it has at least one device with a
-	// humidity sensor AND at least one device with a humidifier — on any devices.
 	var humConflict int64
 	err = r.db.WithContext(ctx).Raw(`
 		SELECT COUNT(*)

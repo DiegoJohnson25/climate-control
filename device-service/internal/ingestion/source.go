@@ -1,6 +1,3 @@
-// Package ingestion provides transport-agnostic telemetry processing for
-// device-service. Transports implement Source to deliver messages; Process
-// handles cache updates and TimescaleDB writes regardless of origin.
 package ingestion
 
 import "context"

@@ -58,8 +58,8 @@ func (r *Repository) CreateWithDesiredState(ctx context.Context, room *models.Ro
 			return err
 		}
 
-		// TODO: notify device-service of new room once device-service exists.
-		// tx.Exec("SELECT pg_notify('room_config_changed', ?)", room.ID.String())
+		// TODO Phase 3e: replace with events.NotifyRoomCreated via Redis XADD.
+		// Stub remains so the call site is visible at the right transaction boundary.
 
 		return nil
 	})
@@ -72,8 +72,7 @@ func (r *Repository) Update(ctx context.Context, rm *models.Room) error {
 		return ErrNameTaken
 	}
 
-	// TODO: notify device-service of config change.
-	// r.db.WithContext(ctx).Exec("SELECT pg_notify('room_config_changed', ?)", room.ID.String())
+	// TODO Phase 3e: events.NotifyRoomConfigChanged via Redis XADD.
 
 	return err
 }
@@ -96,15 +95,13 @@ func (r *Repository) GetDesiredState(ctx context.Context, roomID uuid.UUID) (mod
 
 // UpdateDesiredState persists the desired state for a room.
 func (r *Repository) UpdateDesiredState(ctx context.Context, ds *models.DesiredState) error {
-	// TODO: notify device-service of state change.
-	// r.db.WithContext(ctx).Exec("SELECT pg_notify('desired_state_changed', ?)", ds.RoomID.String())
-
+	// TODO Phase 3e: events.NotifyDesiredStateChanged via Redis XADD.
 	return r.db.WithContext(ctx).Save(ds).Error
 }
 
-// -------------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
 // Capability queries
-// -------------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
 
 // HasTemperatureCapability returns true if the room has at least one device with
 // a temperature sensor AND at least one device with a heater actuator.

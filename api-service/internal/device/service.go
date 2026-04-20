@@ -1,3 +1,6 @@
+// Package device provides HTTP handlers, service logic, and repository access
+// for the devices domain. Capability-conflict checks for active schedules
+// live here permanently — the device package owns the logic.
 package device
 
 import (
@@ -27,7 +30,6 @@ func (s *Service) List(ctx context.Context, userID uuid.UUID) ([]DeviceWithCapab
 }
 
 func (s *Service) ListByRoom(ctx context.Context, roomID, userID uuid.UUID) ([]DeviceWithCapabilities, error) {
-	// Verify room exists and belongs to the user before listing its devices.
 	if _, err := s.rooms.GetByIDAndUserID(ctx, roomID, userID); err != nil {
 		return nil, ErrRoomNotFound
 	}
@@ -48,7 +50,6 @@ type CreateInput struct {
 }
 
 func (s *Service) Create(ctx context.Context, userID uuid.UUID, input CreateInput) (*DeviceWithCapabilities, error) {
-	// Validate sensor types.
 	seen := make(map[string]bool)
 	for _, st := range input.SensorTypes {
 		if !validSensorTypes[st] {
@@ -60,7 +61,6 @@ func (s *Service) Create(ctx context.Context, userID uuid.UUID, input CreateInpu
 		seen[st] = true
 	}
 
-	// Validate actuator types.
 	seen = make(map[string]bool)
 	for _, at := range input.ActuatorTypes {
 		if !validActuatorTypes[at] {
@@ -72,7 +72,6 @@ func (s *Service) Create(ctx context.Context, userID uuid.UUID, input CreateInpu
 		seen[at] = true
 	}
 
-	// Check hw_id availability — returns ErrAlreadyOwned or ErrHwIDTaken if taken.
 	if err := s.devices.CheckHwIDAvailability(ctx, input.HwID, userID); err != nil {
 		return nil, err
 	}
@@ -86,7 +85,6 @@ func (s *Service) Create(ctx context.Context, userID uuid.UUID, input CreateInpu
 		return nil, err
 	}
 
-	// Fetch the created device with its sensors and actuators attached.
 	return s.devices.GetByIDAndUserID(ctx, dev.ID, userID)
 }
 
@@ -102,16 +100,13 @@ func (s *Service) Update(ctx context.Context, id, userID uuid.UUID, input Update
 		return nil, err
 	}
 
-	// If the device is being assigned to a room, verify the room exists and
-	// belongs to the user.
 	if input.RoomID != nil {
 		if _, err := s.rooms.GetByIDAndUserID(ctx, *input.RoomID, userID); err != nil {
 			return nil, ErrRoomNotFound
 		}
 	}
 
-	// If the device is leaving a room (unassign or move), check for capability
-	// conflicts in the room it is leaving.
+	// device is leaving its current room — check that nothing depends on it
 	leavingRoom := dev.RoomID != nil && (input.RoomID == nil || *input.RoomID != *dev.RoomID)
 
 	if leavingRoom {
@@ -139,7 +134,6 @@ func (s *Service) Delete(ctx context.Context, id, userID uuid.UUID) error {
 		return err
 	}
 
-	// If the device is assigned to a room, check for capability conflicts.
 	if dev.RoomID != nil {
 		conflict, err := s.devices.HasCapabilityConflictAfterRemoval(ctx, *dev.RoomID, id)
 		if err != nil {
