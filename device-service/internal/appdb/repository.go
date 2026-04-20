@@ -519,21 +519,23 @@ func buildActuatorHwIDs(devices []deviceRow, actuatorsByDevice map[uuid.UUID][]a
 }
 
 // buildDeviceCache assembles a DeviceCache from raw DB rows.
+// Sensors and Actuators are stored as maps keyed by type for O(1) lookup
+// at ingestion and control loop evaluation time.
 func buildDeviceCache(dev deviceRow, sensors []sensorRow, actuators []actuatorRow) *cache.DeviceCache {
-	sensorEntries := make([]cache.SensorEntry, 0, len(sensors))
+	sensorEntries := make(map[string]cache.SensorEntry, len(sensors))
 	for _, s := range sensors {
-		sensorEntries = append(sensorEntries, cache.SensorEntry{
+		sensorEntries[s.MeasurementType] = cache.SensorEntry{
 			SensorID:        s.ID,
 			MeasurementType: s.MeasurementType,
-		})
+		}
 	}
 
-	actuatorEntries := make([]cache.ActuatorEntry, 0, len(actuators))
+	actuatorEntries := make(map[string]cache.ActuatorEntry, len(actuators))
 	for _, a := range actuators {
-		actuatorEntries = append(actuatorEntries, cache.ActuatorEntry{
+		actuatorEntries[a.ActuatorType] = cache.ActuatorEntry{
 			ActuatorID:   a.ID,
 			ActuatorType: a.ActuatorType,
-		})
+		}
 	}
 
 	return &cache.DeviceCache{

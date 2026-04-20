@@ -73,14 +73,15 @@ type ActuatorEntry struct {
 
 // DeviceCache holds metadata for a single device including its mutable room
 // assignment. mu protects RoomID which changes on device assignment/unassignment.
-// Sensors and Actuators are immutable after creation.
+// Sensors and Actuators are immutable after creation and keyed by type for O(1)
+// lookup at ingestion and control loop evaluation time.
 type DeviceCache struct {
 	mu        sync.RWMutex
 	DeviceID  uuid.UUID
 	HwID      string
 	RoomID    *uuid.UUID
-	Sensors   []SensorEntry
-	Actuators []ActuatorEntry
+	Sensors   map[string]SensorEntry   // measurement_type → entry
+	Actuators map[string]ActuatorEntry // actuator_type    → entry
 }
 
 // GetRoomID returns the device's current room assignment safely.
@@ -101,16 +102,27 @@ func (dc *DeviceCache) SetRoomID(roomID *uuid.UUID) {
 // mu protects the rooms and devices maps themselves — held only for the
 // duration of map reads/writes, not for operations on the objects within.
 // RoomCache and DeviceCache each have their own mutex for field-level access.
+//
+// assignedPartitions and numPartitions are unused until Phase 6 (Kafka).
+// They are stubbed here so the Kafka consumer group callbacks can populate
+// them without requiring structural changes to Store.
 type Store struct {
 	mu      sync.RWMutex
 	rooms   map[uuid.UUID]*RoomCache // room_id → cache
 	devices map[string]*DeviceCache  // hw_id   → cache
+
+	// TODO Phase 6: populated by OnPartitionsAssigned / OnPartitionsRevoked
+	// callbacks from the franz-go Kafka consumer. Until then, assignedPartitions
+	// is always empty and OwnsRoom returns true for all rooms.
+	assignedPartitions map[int32]struct{}
+	numPartitions      int32
 }
 
 func NewStore() *Store {
 	return &Store{
-		rooms:   make(map[uuid.UUID]*RoomCache),
-		devices: make(map[string]*DeviceCache),
+		rooms:              make(map[uuid.UUID]*RoomCache),
+		devices:            make(map[string]*DeviceCache),
+		assignedPartitions: make(map[int32]struct{}),
 	}
 }
 
@@ -175,9 +187,12 @@ func (s *Store) RoomIDs() []uuid.UUID {
 	return ids
 }
 
-// OwnsRoom returns true if this instance owns the given room. In Phase 3
-// this always returns true — Phase 5 replaces this with consistent hashing
-// against the live instance list.
+// OwnsRoom returns true if this instance is responsible for the given room.
+// Phase 3: always returns true — single instance owns all rooms.
+// TODO Phase 6: replace with Kafka partition ownership check.
+// murmur2(room_id) % numPartitions must be in assignedPartitions.
+// assignedPartitions is populated by OnPartitionsAssigned /
+// OnPartitionsRevoked callbacks from the franz-go Kafka consumer.
 func (s *Store) OwnsRoom(_ uuid.UUID) bool {
 	return true
 }
