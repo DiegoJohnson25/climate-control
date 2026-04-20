@@ -43,15 +43,15 @@ func main() {
 	authHandler := auth.NewHandler(authSvc)
 
 	roomRepo := room.NewRepository(db)
-	roomSvc := room.NewService(roomRepo)
+	roomSvc := room.NewService(roomRepo, rdb)
 	roomHandler := room.NewHandler(roomSvc)
 
 	deviceRepo := device.NewRepository(db)
-	deviceSvc := device.NewService(deviceRepo, roomRepo)
+	deviceSvc := device.NewService(deviceRepo, roomRepo, rdb)
 	deviceHandler := device.NewHandler(deviceSvc)
 
 	scheduleRepo := schedule.NewRepository(db)
-	scheduleSvc := schedule.NewService(scheduleRepo, roomRepo)
+	scheduleSvc := schedule.NewService(scheduleRepo, roomRepo, rdb)
 	scheduleHandler := schedule.NewHandler(scheduleSvc)
 
 	r := router.Setup(authHandler, authSvc, userHandler, roomHandler, deviceHandler, scheduleHandler)

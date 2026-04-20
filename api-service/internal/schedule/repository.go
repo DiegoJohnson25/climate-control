@@ -95,24 +95,15 @@ func (r *Repository) Activate(ctx context.Context, scheduleID, roomID uuid.UUID)
 			return err
 		}
 
-		// TODO Phase 3e: events.NotifyScheduleChanged(roomID) via Redis XADD.
-
 		return nil
 	})
 }
 
 // Deactivate sets is_active = false on the given schedule.
 func (r *Repository) Deactivate(ctx context.Context, scheduleID, roomID uuid.UUID) error {
-	err := r.db.WithContext(ctx).Model(&models.Schedule{}).
+	return r.db.WithContext(ctx).Model(&models.Schedule{}).
 		Where("id = ?", scheduleID).
 		Update("is_active", false).Error
-	if err != nil {
-		return err
-	}
-
-	// TODO Phase 3e: events.NotifyScheduleChanged(roomID) via Redis XADD.
-
-	return nil
 }
 
 // ---------------------------------------------------------------------------

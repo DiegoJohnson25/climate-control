@@ -58,9 +58,6 @@ func (r *Repository) CreateWithDesiredState(ctx context.Context, room *models.Ro
 			return err
 		}
 
-		// TODO Phase 3e: replace with events.NotifyRoomCreated via Redis XADD.
-		// Stub remains so the call site is visible at the right transaction boundary.
-
 		return nil
 	})
 }
@@ -71,9 +68,6 @@ func (r *Repository) Update(ctx context.Context, rm *models.Room) error {
 	if isUniqueViolation(err) {
 		return ErrNameTaken
 	}
-
-	// TODO Phase 3e: events.NotifyRoomConfigChanged via Redis XADD.
-
 	return err
 }
 
@@ -95,7 +89,6 @@ func (r *Repository) GetDesiredState(ctx context.Context, roomID uuid.UUID) (mod
 
 // UpdateDesiredState persists the desired state for a room.
 func (r *Repository) UpdateDesiredState(ctx context.Context, ds *models.DesiredState) error {
-	// TODO Phase 3e: events.NotifyDesiredStateChanged via Redis XADD.
 	return r.db.WithContext(ctx).Save(ds).Error
 }
 

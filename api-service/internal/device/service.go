@@ -6,9 +6,11 @@ package device
 import (
 	"context"
 
-	"github.com/DiegoJohnson25/climate-control/api-service/internal/room"
+	"github.com/DiegoJohnson25/climate-control/api-service/internal/events"
 	"github.com/DiegoJohnson25/climate-control/api-service/internal/models"
+	"github.com/DiegoJohnson25/climate-control/api-service/internal/room"
 	"github.com/google/uuid"
+	"github.com/redis/go-redis/v9"
 )
 
 var (
@@ -19,10 +21,11 @@ var (
 type Service struct {
 	devices *Repository
 	rooms   *room.Repository
+	rdb     *redis.Client
 }
 
-func NewService(devices *Repository, rooms *room.Repository) *Service {
-	return &Service{devices: devices, rooms: rooms}
+func NewService(devices *Repository, rooms *room.Repository, rdb *redis.Client) *Service {
+	return &Service{devices: devices, rooms: rooms, rdb: rdb}
 }
 
 func (s *Service) List(ctx context.Context, userID uuid.UUID) ([]DeviceWithCapabilities, error) {
@@ -108,6 +111,7 @@ func (s *Service) Update(ctx context.Context, id, userID uuid.UUID, input Update
 
 	// device is leaving its current room — check that nothing depends on it
 	leavingRoom := dev.RoomID != nil && (input.RoomID == nil || *input.RoomID != *dev.RoomID)
+	enteringRoom := input.RoomID != nil && (dev.Device.RoomID == nil || *input.RoomID != *dev.Device.RoomID)
 
 	if leavingRoom {
 		conflict, err := s.devices.HasCapabilityConflictAfterRemoval(ctx, *dev.RoomID, id)
@@ -119,12 +123,21 @@ func (s *Service) Update(ctx context.Context, id, userID uuid.UUID, input Update
 		}
 	}
 
+	prevRoomID := dev.Device.RoomID
 	dev.Device.Name = input.Name
 	dev.Device.RoomID = input.RoomID
 
 	if err := s.devices.Update(ctx, &dev.Device); err != nil {
 		return nil, err
 	}
+
+	if leavingRoom {
+		events.NotifyDeviceUnassigned(ctx, s.rdb, *prevRoomID, dev.Device.HwID)
+	}
+	if enteringRoom {
+		events.NotifyDeviceAssigned(ctx, s.rdb, *input.RoomID, dev.Device.HwID)
+	}
+
 	return s.devices.GetByIDAndUserID(ctx, id, userID)
 }
 

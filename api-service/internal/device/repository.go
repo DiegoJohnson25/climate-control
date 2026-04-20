@@ -183,9 +183,6 @@ func (r *Repository) Update(ctx context.Context, dev *models.Device) error {
 	if isUniqueViolation(err) {
 		return ErrNameTaken
 	}
-
-	// TODO Phase 3e: events.NotifyDeviceChanged via Redis XADD.
-
 	return err
 }
 
