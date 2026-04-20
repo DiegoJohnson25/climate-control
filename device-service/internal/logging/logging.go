@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	"github.com/DiegoJohnson25/climate-control/device-service/internal/cache"
+	"github.com/DiegoJohnson25/climate-control/device-service/internal/control"
+	"github.com/google/uuid"
 )
 
 // LogSummary logs a concise startup summary of the cache store.
@@ -204,4 +206,61 @@ func activeDays(dow [8]bool) []string {
 		}
 	}
 	return result
+}
+
+// LogTickResult logs the commands and control log entry produced by a single
+// control tick evaluation. Used for debugging command publishing — call from
+// scheduler.tick when investigating missing MQTT commands.
+func LogTickResult(roomID uuid.UUID, result control.TickResult) {
+	entry := result.LogEntry
+	log.Printf("[tick] room %s: source=%s mode=%s commands=%d",
+		roomID, entry.ControlSource, entry.Mode, len(result.Commands))
+
+	if len(result.Commands) == 0 {
+		log.Printf("[tick]   no commands generated")
+	}
+	for _, cmd := range result.Commands {
+		log.Printf("[tick]   cmd: hw_id=%s actuator=%s state=%v", cmd.HwID, cmd.ActuatorType, cmd.State)
+	}
+
+	if entry.AvgTemp != nil {
+		log.Printf("[tick]   avg_temp=%.2f (n=%s) target=%s",
+			*entry.AvgTemp,
+			formatInt16Ptr(entry.ReadingCountTemp),
+			formatFloat64Ptr(entry.TargetTemp),
+		)
+	} else {
+		log.Printf("[tick]   avg_temp=none target=%s", formatFloat64Ptr(entry.TargetTemp))
+	}
+
+	if entry.AvgHum != nil {
+		log.Printf("[tick]   avg_hum=%.2f (n=%s) target=%s",
+			*entry.AvgHum,
+			formatInt16Ptr(entry.ReadingCountHum),
+			formatFloat64Ptr(entry.TargetHum),
+		)
+	} else {
+		log.Printf("[tick]   avg_hum=none target=%s", formatFloat64Ptr(entry.TargetHum))
+	}
+
+	if entry.HeaterCmd != nil {
+		log.Printf("[tick]   heater_cmd=%d", *entry.HeaterCmd)
+	}
+	if entry.HumidifierCmd != nil {
+		log.Printf("[tick]   humidifier_cmd=%d", *entry.HumidifierCmd)
+	}
+}
+
+func formatFloat64Ptr(v *float64) string {
+	if v == nil {
+		return "none"
+	}
+	return fmt.Sprintf("%.2f", *v)
+}
+
+func formatInt16Ptr(v *int16) string {
+	if v == nil {
+		return "none"
+	}
+	return fmt.Sprintf("%d", *v)
 }

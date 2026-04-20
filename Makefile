@@ -228,7 +228,7 @@ mqtt-telemetry:
 mqtt-commands:
 	docker exec -it climate-control-mosquitto-1 mosquitto_sub \
 	  -h localhost -t 'devices/+/cmd' \
-	  -u $${MQTT_DEVICE_SERVICE_USERNAME} -P $${MQTT_DEVICE_SERVICE_PASSWORD} \
+	  -u $${MQTT_DEVICE_USERNAME} -P $${MQTT_DEVICE_PASSWORD} \
 	  -v
 
 # Subscribe to all topics

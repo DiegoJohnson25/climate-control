@@ -29,13 +29,17 @@ type Config struct {
 	MQTTDeviceServicePassword string
 
 	// Control
-	StaleThreshold time.Duration
+	StaleThreshold       time.Duration
+	TickInterval         time.Duration
+	CacheRefreshInterval time.Duration
 }
 
 // Load reads environment variables into a Config. Panics if any variable
 // marked with mustGetEnv is unset.
 func Load() Config {
 	staleSeconds := getEnvInt("CONTROL_STALE_THRESHOLD_SECONDS", 90)
+	tickSeconds := getEnvInt("CONTROL_TICK_INTERVAL_SECONDS", 30)
+	cacheRefreshMinutes := getEnvInt("CONTROL_CACHE_REFRESH_MINUTES", 5)
 
 	return Config{
 		PostgresUser:     os.Getenv("POSTGRES_USER"),
@@ -52,7 +56,9 @@ func Load() Config {
 		MQTTDeviceServiceUsername: os.Getenv("MQTT_DEVICE_SERVICE_USERNAME"),
 		MQTTDeviceServicePassword: os.Getenv("MQTT_DEVICE_SERVICE_PASSWORD"),
 
-		StaleThreshold: time.Duration(staleSeconds) * time.Second,
+		StaleThreshold:       time.Duration(staleSeconds) * time.Second,
+		TickInterval:         time.Duration(tickSeconds) * time.Second,
+		CacheRefreshInterval: time.Duration(cacheRefreshMinutes) * time.Minute,
 	}
 }
 

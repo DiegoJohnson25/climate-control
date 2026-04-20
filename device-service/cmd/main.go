@@ -15,6 +15,7 @@ import (
 	"github.com/DiegoJohnson25/climate-control/device-service/internal/logging"
 	"github.com/DiegoJohnson25/climate-control/device-service/internal/metricsdb"
 	"github.com/DiegoJohnson25/climate-control/device-service/internal/mqtt"
+	"github.com/DiegoJohnson25/climate-control/device-service/internal/scheduler"
 )
 
 func main() {
@@ -61,10 +62,10 @@ func main() {
 	}
 	log.Println("telemetry ingestion: started")
 
-	// TODO Phase 3d: start control loop / scheduler
+	sched := scheduler.NewScheduler(store, appRepo, metricsRepo, mqttClient, cfg)
+	sched.Start(ctx)
+	log.Println("scheduler: started")
 	// TODO Phase 3e: start Redis stream consumer
-
-	// rdb unused until Phase 3e
 	_ = rdb
 
 	quit := make(chan os.Signal, 1)
@@ -74,8 +75,7 @@ func main() {
 
 	cancel()
 	ingestor.Stop()
-
-	// TODO Phase 3d: wg.Wait() once scheduler goroutines are added
-
+	sched.Wait()
+	// TODO Phase 3e: call stream consumer Wait() for graceful shutdown
 	log.Println("device-service: shutdown complete")
 }
