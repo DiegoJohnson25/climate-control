@@ -463,7 +463,6 @@ a duty cycle fraction (0.0–1.0) at any time bucket resolution without casting.
 - `schedule_periods.start_time` / `end_time` — `string` on model, `TEXT` in DB
 - `TargetHumidity` shortened to `TargetHum` on `models.SchedulePeriod` and `desired_states`
 - No constraint tags — migrations handle all constraints
-- `desired_states` table name set via `TableName()` method
 - GORM used for appdb only — TimescaleDB uses raw pgx
 - Shared models never have GORM association fields (e.g. no `Sensors []Sensor` on Device)
   — enriched types live in the domain package that needs them

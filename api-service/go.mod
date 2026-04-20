@@ -3,7 +3,6 @@ module github.com/DiegoJohnson25/climate-control/api-service
 go 1.25.0
 
 require (
-	github.com/DiegoJohnson25/climate-control/shared v0.0.0
 	github.com/gin-gonic/gin v1.12.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
@@ -54,5 +53,3 @@ require (
 	golang.org/x/text v0.35.0 // indirect
 	google.golang.org/protobuf v1.36.10 // indirect
 )
-
-replace github.com/DiegoJohnson25/climate-control/shared => ../shared

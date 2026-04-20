@@ -5,7 +5,7 @@ package user
 import (
 	"context"
 
-	"github.com/DiegoJohnson25/climate-control/shared/models"
+	"github.com/DiegoJohnson25/climate-control/api-service/internal/models"
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 )

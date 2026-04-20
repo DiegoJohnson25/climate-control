@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/DiegoJohnson25/climate-control/api-service/internal/user"
-	"github.com/DiegoJohnson25/climate-control/shared/models"
+	"github.com/DiegoJohnson25/climate-control/api-service/internal/models"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
