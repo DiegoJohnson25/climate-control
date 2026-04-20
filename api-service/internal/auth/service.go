@@ -1,3 +1,6 @@
+// Package auth provides login, token rotation, logout, and the JWT middleware
+// used to gate protected api-service routes. auth imports user — never the
+// reverse.
 package auth
 
 import (

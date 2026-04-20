@@ -1,3 +1,6 @@
+// Package room provides HTTP handlers, service logic, and repository access
+// for the rooms domain. Capability queries live here because they are a
+// room-level concern — moving them to device would create a circular import.
 package room
 
 import (
@@ -61,8 +64,8 @@ func (s *Service) Update(ctx context.Context, id, userID uuid.UUID, name string,
 }
 
 func (s *Service) Delete(ctx context.Context, id, userID uuid.UUID) error {
-	// Ownership check before delete — GetByIDAndUserID returns ErrNotFound if
-	// the room exists but belongs to a different user, so we never leak existence.
+	// GetByIDAndUserID returns ErrNotFound if the room exists but belongs
+	// to a different user — ownership gate without leaking existence.
 	if _, err := s.rooms.GetByIDAndUserID(ctx, id, userID); err != nil {
 		return err
 	}
@@ -90,7 +93,6 @@ type UpdateDesiredStateInput struct {
 
 // UpdateDesiredState validates capability requirements and persists the new state.
 func (s *Service) UpdateDesiredState(ctx context.Context, roomID, userID uuid.UUID, input UpdateDesiredStateInput) (models.DesiredState, error) {
-	// Ownership check.
 	if _, err := s.rooms.GetByIDAndUserID(ctx, roomID, userID); err != nil {
 		return models.DesiredState{}, err
 	}

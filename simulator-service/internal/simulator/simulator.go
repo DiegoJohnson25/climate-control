@@ -1,3 +1,8 @@
+// Package simulator runs the per-device publish loop. Each device gets its own
+// goroutine, staggered across the tick interval to spread load, and publishes
+// a sensor-type keyed telemetry payload to devices/{hw_id}/telemetry. Room
+// state is the evolving unit — Phase 4 will replace the static baseValues with
+// a physics or drift model calculator.
 package simulator
 
 import (
@@ -14,15 +19,14 @@ import (
 	"github.com/DiegoJohnson25/climate-control/simulator-service/internal/provisioning"
 )
 
-// -----------------------------------------------------------------------------
-// Runtime state — separate from config, evolves per tick in Phase 4
-// -----------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Runtime state
+// ---------------------------------------------------------------------------
 
 type RoomState struct {
 	Provisioned provisioning.ProvisionedRoom
-	baseValues  map[string]float64 // sensor type → base value, built once at startup
-	// Phase 4: CurrentTemp, CurrentHumidity float64
-	// Phase 4: calculator RoomCalculator
+	baseValues  map[string]float64
+	// TODO Phase 4: CurrentTemp, CurrentHumidity, calculator RoomCalculator.
 }
 
 func newRoomState(room provisioning.ProvisionedRoom) *RoomState {
@@ -31,14 +35,13 @@ func newRoomState(room provisioning.ProvisionedRoom) *RoomState {
 		baseValues: map[string]float64{
 			"temperature": room.Config.Model.BaseTemp,
 			"humidity":    room.Config.Model.BaseHumidity,
-			// air_quality has no base value defined yet — defaults to 0
 		},
 	}
 }
 
-// -----------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
 // MQTT payload types
-// -----------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
 
 type telemetryPayload struct {
 	HwID     string    `json:"hw_id"`
@@ -50,12 +53,14 @@ type reading struct {
 	Value float64 `json:"value"`
 }
 
-// -----------------------------------------------------------------------------
-// Run — entry point, blocks until ctx is cancelled
-// -----------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Run
+// ---------------------------------------------------------------------------
 
+// Run spawns one goroutine per provisioned device and blocks until ctx is
+// cancelled. Device starts are staggered evenly across tickInterval so
+// telemetry publishes are spread over the window rather than bursting at once.
 func Run(ctx context.Context, cfg *config.Config, users []provisioning.ProvisionedUser, mqttClient *mqtt.Client) error {
-	// collect all devices across all users and rooms for stagger calculation
 	type deviceEntry struct {
 		device provisioning.ProvisionedDevice
 		room   *RoomState
@@ -101,12 +106,11 @@ func Run(ctx context.Context, cfg *config.Config, users []provisioning.Provision
 	return nil
 }
 
-// -----------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
 // Device goroutine
-// -----------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
 
 func runDevice(ctx context.Context, dev provisioning.ProvisionedDevice, room *RoomState, mqttClient *mqtt.Client, tickInterval, offset time.Duration) {
-	// subscribe to cmd topic — log received commands for now
 	cmdTopic := fmt.Sprintf("devices/%s/cmd", dev.HwID)
 	if err := mqttClient.Subscribe(cmdTopic, 2, func(topic string, payload []byte) {
 		log.Printf("[%s] received command: %s", dev.HwID, string(payload))
@@ -114,14 +118,12 @@ func runDevice(ctx context.Context, dev provisioning.ProvisionedDevice, room *Ro
 		log.Printf("[%s] failed to subscribe to cmd topic: %v", dev.HwID, err)
 	}
 
-	// only publish telemetry for devices with sensors
+	// Actuator-only devices have nothing to publish; block until shutdown.
 	if len(dev.Config.Sensors) == 0 {
-		// actuator-only device — no telemetry to publish, just wait for context
 		<-ctx.Done()
 		return
 	}
 
-	// stagger offset — spread publish load across tick window
 	select {
 	case <-time.After(offset):
 	case <-ctx.Done():
@@ -143,9 +145,9 @@ func runDevice(ctx context.Context, dev provisioning.ProvisionedDevice, room *Ro
 	}
 }
 
-// -----------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
 // Telemetry calculation and publish
-// -----------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
 
 func publishTelemetry(dev provisioning.ProvisionedDevice, room *RoomState, mqttClient *mqtt.Client) error {
 	readings := make([]reading, 0, len(dev.Config.Sensors))
@@ -174,9 +176,9 @@ func publishTelemetry(dev provisioning.ProvisionedDevice, room *RoomState, mqttC
 	return mqttClient.Publish(topic, 1, payload)
 }
 
-// -----------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
 // Helpers
-// -----------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
 
 func roundTo2DP(v float64) float64 {
 	return float64(int(v*100+0.5)) / 100

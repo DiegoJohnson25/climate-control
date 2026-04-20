@@ -1,1 +1,5 @@
+BEGIN;
+
 DROP TABLE IF EXISTS sensor_readings;
+
+COMMIT;

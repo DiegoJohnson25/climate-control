@@ -1,3 +1,7 @@
+// Package models defines the GORM structs shared across services. These
+// structs are the schema contract for appdb — migrations are the source of
+// truth, and the tags here exist only for GORM round-trips. device-service
+// does not use GORM model queries; it scans into unexported local structs.
 package models
 
 import (

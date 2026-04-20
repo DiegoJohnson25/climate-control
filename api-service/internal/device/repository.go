@@ -73,25 +73,21 @@ func (r *Repository) attachCapabilities(ctx context.Context, devices []models.De
 		return []DeviceWithCapabilities{}, nil
 	}
 
-	// Extract device IDs.
 	ids := make([]uuid.UUID, len(devices))
 	for i, d := range devices {
 		ids[i] = d.ID
 	}
 
-	// Bulk fetch sensors.
 	var sensors []models.Sensor
 	if err := r.db.WithContext(ctx).Where("device_id IN ?", ids).Find(&sensors).Error; err != nil {
 		return nil, err
 	}
 
-	// Bulk fetch actuators.
 	var actuators []models.Actuator
 	if err := r.db.WithContext(ctx).Where("device_id IN ?", ids).Find(&actuators).Error; err != nil {
 		return nil, err
 	}
 
-	// Build lookup maps.
 	sensorMap := make(map[uuid.UUID][]models.Sensor)
 	for _, s := range sensors {
 		sensorMap[s.DeviceID] = append(sensorMap[s.DeviceID], s)
@@ -101,7 +97,6 @@ func (r *Repository) attachCapabilities(ctx context.Context, devices []models.De
 		actuatorMap[a.DeviceID] = append(actuatorMap[a.DeviceID], a)
 	}
 
-	// Stitch together.
 	result := make([]DeviceWithCapabilities, len(devices))
 	for i, d := range devices {
 		result[i] = DeviceWithCapabilities{
@@ -128,7 +123,7 @@ func (r *Repository) attachCapabilities(ctx context.Context, devices []models.De
 // instead verify the hw_id exists in a pre-populated registry and is unclaimed,
 // rather than checking for duplicate registrations.
 //
-// TODO: check admin blacklist here once blacklisted_devices table exists.
+// TODO: check admin blacklist here once the blacklisted_devices table exists.
 func (r *Repository) CheckHwIDAvailability(ctx context.Context, hwID string, userID uuid.UUID) error {
 	var dev models.Device
 	err := r.db.WithContext(ctx).Where("hw_id = ?", hwID).First(&dev).Error
@@ -150,8 +145,8 @@ func (r *Repository) Create(ctx context.Context, dev *models.Device, sensorTypes
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(dev).Error; err != nil {
 			if isUniqueViolation(err) {
-				// hw_id was pre-checked by CheckHwIDAvailability so this
-				// must be a name collision.
+				// hw_id was pre-checked, so a unique violation here is the
+				// (user_id, name) constraint.
 				return ErrNameTaken
 			}
 			return err
@@ -189,8 +184,7 @@ func (r *Repository) Update(ctx context.Context, dev *models.Device) error {
 		return ErrNameTaken
 	}
 
-	// TODO: notify device-service of room assignment change.
-	// r.db.WithContext(ctx).Exec("SELECT pg_notify('room_config_changed', ?)", dev.RoomID.String())
+	// TODO Phase 3e: events.NotifyDeviceChanged via Redis XADD.
 
 	return err
 }
@@ -201,12 +195,14 @@ func (r *Repository) Delete(ctx context.Context, id uuid.UUID) error {
 	return r.db.WithContext(ctx).Delete(&models.Device{}, id).Error
 }
 
-// -------------------------------------------------------------------------------
-// Capability conflict checks — called by the service before Update/Delete.
-// These check whether removing a device would break the room's desired_state
-// or active schedule periods. Only active schedules are checked — inactive
-// schedules are ignored until activation time.
-// -------------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Capability conflict checks
+// ---------------------------------------------------------------------------
+//
+// Called by the service before Update/Delete. These check whether removing a
+// device would break the room's desired_state or active schedule periods.
+// Only active schedules are checked — inactive schedules are ignored until
+// activation time.
 
 // HasCapabilityConflictAfterRemoval returns true if removing deviceID from roomID
 // would leave desired_state or active schedule periods with targets the room
@@ -222,18 +218,15 @@ func (r *Repository) HasCapabilityConflictAfterRemoval(ctx context.Context, room
 		return false, err
 	}
 
-	// If both capabilities are still present there is no conflict.
 	if hasTempCap && hasHumCap {
 		return false, nil
 	}
 
-	// Check desired_state for orphaned targets.
 	conflict, err := r.desiredStateHasConflict(ctx, roomID, hasTempCap, hasHumCap)
 	if err != nil || conflict {
 		return conflict, err
 	}
 
-	// Check active schedule periods for orphaned targets.
 	return r.activeSchedulePeriodsHaveConflict(ctx, roomID, hasTempCap, hasHumCap)
 }
 

@@ -1,3 +1,5 @@
+// Package logging provides cache inspection helpers for device-service.
+// Used at startup and for debugging cache state under development.
 package logging
 
 import (
@@ -113,9 +115,8 @@ func LogDevice(dc *cache.DeviceCache) {
 	}
 }
 
-// ---- unexported helpers ----
-// These are called from LogFullRoom while the room lock is already held —
-// they must not attempt to acquire the lock again.
+// The helpers below are called from LogFullRoom while the room lock is
+// already held — they must not attempt to acquire the lock again.
 
 func logDesiredState(ds cache.DesiredStateCache) {
 	log.Printf("  desired_state:")

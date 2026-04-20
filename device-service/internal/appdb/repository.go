@@ -1,3 +1,7 @@
+// Package appdb provides cache warm and reload access to the application
+// PostgreSQL database for device-service. All queries use GORM's Raw+Scan
+// pattern into unexported scan structs — the cache types are the public
+// contract; scan types are never exposed outside this package.
 package appdb
 
 import (
@@ -12,9 +16,9 @@ import (
 	"gorm.io/gorm"
 )
 
-// ---- internal scan types ----
-// Unexported scan targets for DB queries — never exposed outside this package.
-// Cache types are the public contract.
+// ---------------------------------------------------------------------------
+// Scan types
+// ---------------------------------------------------------------------------
 
 type roomRow struct {
 	ID           uuid.UUID
@@ -68,8 +72,11 @@ var actuatorSensorTypes = map[string]string{
 	"humidifier": "humidity",
 }
 
-// ---- Repository ----
+// ---------------------------------------------------------------------------
+// Repository
+// ---------------------------------------------------------------------------
 
+// Repository provides cache warm and reload operations against appdb.
 type Repository struct {
 	db *gorm.DB
 }
@@ -78,18 +85,15 @@ func NewRepository(db *gorm.DB) *Repository {
 	return &Repository{db: db}
 }
 
-// ---- WarmCache ----
-
 // WarmCache loads all owned rooms and their associated data from appdb and
 // populates the store. Called once at startup before any goroutines start.
 func (r *Repository) WarmCache(store *cache.Store) error {
-	// Step 1 — fetch all room IDs
 	var allRoomIDs []uuid.UUID
 	if err := r.db.Raw(`SELECT id FROM rooms`).Scan(&allRoomIDs).Error; err != nil {
 		return fmt.Errorf("fetch room ids: %w", err)
 	}
 
-	// Step 2 — filter to owned rooms (Phase 3: all rooms, Phase 5: hash-filtered)
+	// filter to owned rooms (Phase 3: all rooms, Phase 5: hash-filtered)
 	ownedIDs := make([]uuid.UUID, 0, len(allRoomIDs))
 	for _, id := range allRoomIDs {
 		if store.OwnsRoom(id) {
@@ -100,7 +104,6 @@ func (r *Repository) WarmCache(store *cache.Store) error {
 		return nil
 	}
 
-	// Step 3 — bulk fetch all data for owned rooms
 	rooms, err := r.fetchRooms(ownedIDs)
 	if err != nil {
 		return fmt.Errorf("fetch rooms: %w", err)
@@ -121,7 +124,7 @@ func (r *Repository) WarmCache(store *cache.Store) error {
 		return fmt.Errorf("fetch devices: %w", err)
 	}
 
-	// Collect all device IDs for sensor/actuator queries
+	// collect device IDs for sensor/actuator bulk fetch
 	allDeviceIDs := make([]uuid.UUID, 0, len(devices))
 	for _, dev := range devices {
 		allDeviceIDs = append(allDeviceIDs, dev.ID)
@@ -140,7 +143,6 @@ func (r *Repository) WarmCache(store *cache.Store) error {
 		}
 	}
 
-	// Step 4 — build index maps
 	dsMap := make(map[uuid.UUID]desiredStateRow, len(desiredStates))
 	for _, ds := range desiredStates {
 		dsMap[ds.RoomID] = ds
@@ -168,7 +170,6 @@ func (r *Repository) WarmCache(store *cache.Store) error {
 		actuatorsByDevice[a.DeviceID] = append(actuatorsByDevice[a.DeviceID], a)
 	}
 
-	// Step 5 — assemble and populate store
 	for _, rm := range rooms {
 		rc, err := buildRoomCache(
 			rm,
@@ -183,7 +184,6 @@ func (r *Repository) WarmCache(store *cache.Store) error {
 		store.AddRoom(rm.ID, rc)
 	}
 
-	// Populate device store — all devices for owned rooms
 	for _, dev := range devices {
 		dc := buildDeviceCache(dev, sensorsByDevice[dev.ID], actuatorsByDevice[dev.ID])
 		store.AddDevice(dev.HwID, dc)
@@ -191,8 +191,6 @@ func (r *Repository) WarmCache(store *cache.Store) error {
 
 	return nil
 }
-
-// ---- ReloadRoom ----
 
 // ReloadRoom refreshes the cache entry for a single room. Called by the stream
 // consumer on room-scoped events and by the periodic refresh ticker.
@@ -249,7 +247,7 @@ func (r *Repository) ReloadRoom(store *cache.Store, roomID uuid.UUID) error {
 		return fmt.Errorf("build room cache for %s: %w", roomID, err)
 	}
 
-	// Preserve runtime-only fields from existing cache entry
+	// preserve runtime-only fields from existing cache entry
 	existing := store.Room(roomID)
 	if existing != nil {
 		existing.Mu.RLock()
@@ -262,8 +260,6 @@ func (r *Repository) ReloadRoom(store *cache.Store, roomID uuid.UUID) error {
 	store.AddRoom(roomID, rc)
 	return nil
 }
-
-// ---- ReloadDevice ----
 
 // ReloadDevice refreshes the cache entry for a single device. Called by the
 // stream consumer on device_changed events.
@@ -292,7 +288,9 @@ func (r *Repository) ReloadDevice(store *cache.Store, hwID string) error {
 	return nil
 }
 
-// ---- bulk query helpers ----
+// ---------------------------------------------------------------------------
+// Query helpers
+// ---------------------------------------------------------------------------
 
 func (r *Repository) fetchRooms(roomIDs []uuid.UUID) ([]roomRow, error) {
 	var rows []roomRow
@@ -356,8 +354,6 @@ func (r *Repository) fetchActuators(deviceIDs []uuid.UUID) ([]actuatorRow, error
 	`, deviceIDs).Scan(&rows).Error
 	return rows, err
 }
-
-// ---- single-room query helpers ----
 
 func (r *Repository) fetchRoom(roomID uuid.UUID) (*roomRow, error) {
 	var row roomRow
@@ -424,7 +420,9 @@ func (r *Repository) fetchDeviceByHwID(hwID string) (*deviceRow, error) {
 	return &row, nil
 }
 
-// ---- cache assembly helpers ----
+// ---------------------------------------------------------------------------
+// Cache assembly
+// ---------------------------------------------------------------------------
 
 // buildRoomCache assembles a RoomCache from raw DB rows, applying all
 // pre-computations so the control loop hot path does no redundant work.
@@ -519,21 +517,23 @@ func buildActuatorHwIDs(devices []deviceRow, actuatorsByDevice map[uuid.UUID][]a
 }
 
 // buildDeviceCache assembles a DeviceCache from raw DB rows.
+// Sensors and Actuators are stored as maps keyed by type for O(1) lookup
+// at ingestion and control loop evaluation time.
 func buildDeviceCache(dev deviceRow, sensors []sensorRow, actuators []actuatorRow) *cache.DeviceCache {
-	sensorEntries := make([]cache.SensorEntry, 0, len(sensors))
+	sensorEntries := make(map[string]cache.SensorEntry, len(sensors))
 	for _, s := range sensors {
-		sensorEntries = append(sensorEntries, cache.SensorEntry{
+		sensorEntries[s.MeasurementType] = cache.SensorEntry{
 			SensorID:        s.ID,
 			MeasurementType: s.MeasurementType,
-		})
+		}
 	}
 
-	actuatorEntries := make([]cache.ActuatorEntry, 0, len(actuators))
+	actuatorEntries := make(map[string]cache.ActuatorEntry, len(actuators))
 	for _, a := range actuators {
-		actuatorEntries = append(actuatorEntries, cache.ActuatorEntry{
+		actuatorEntries[a.ActuatorType] = cache.ActuatorEntry{
 			ActuatorID:   a.ID,
 			ActuatorType: a.ActuatorType,
-		})
+		}
 	}
 
 	return &cache.DeviceCache{

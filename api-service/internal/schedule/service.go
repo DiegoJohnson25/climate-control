@@ -1,3 +1,8 @@
+// Package schedule provides HTTP handlers, service logic, and repository access
+// for the schedules and schedule_periods domain. Schedules are inactive on
+// create; capability validation runs only at activation time. Period
+// create/update/delete only emits stream events when the parent schedule is
+// active.
 package schedule
 
 import (
@@ -18,9 +23,9 @@ func NewService(schedules *Repository, rooms *room.Repository) *Service {
 	return &Service{schedules: schedules, rooms: rooms}
 }
 
-// -------------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
 // Schedule methods
-// -------------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
 
 // Create creates a new inactive schedule under the given room.
 // Verifies room ownership before creating.
@@ -132,9 +137,9 @@ func (s *Service) Deactivate(ctx context.Context, id, userID uuid.UUID) (*models
 	return sched, nil
 }
 
-// -------------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
 // Schedule period methods
-// -------------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
 
 // PeriodInput holds the validated inputs for period create and update.
 // Lives in the service layer — the handler binds its own request struct and
@@ -225,9 +230,9 @@ func (s *Service) DeletePeriod(ctx context.Context, periodID, userID uuid.UUID) 
 	return s.schedules.DeletePeriod(ctx, periodID)
 }
 
-// -------------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
 // Helpers
-// -------------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
 
 // buildPeriod validates the input, checks for overlap, and returns a single
 // models.SchedulePeriod. Midnight-crossing periods are not supported — end time

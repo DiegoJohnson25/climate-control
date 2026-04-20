@@ -1,7 +1,12 @@
+// Package config loads device-service configuration from environment variables.
+// Internal Docker hostnames and ports are hardcoded in the connect package;
+// only credentials and tunables live here.
 package config
 
 import (
 	"os"
+	"strconv"
+	"time"
 )
 
 type Config struct {
@@ -22,9 +27,16 @@ type Config struct {
 	MQTTClientID              string
 	MQTTDeviceServiceUsername string
 	MQTTDeviceServicePassword string
+
+	// Control
+	StaleThreshold time.Duration
 }
 
+// Load reads environment variables into a Config. Panics if any variable
+// marked with mustGetEnv is unset.
 func Load() Config {
+	staleSeconds := getEnvInt("CONTROL_STALE_THRESHOLD_SECONDS", 90)
+
 	return Config{
 		PostgresUser:     os.Getenv("POSTGRES_USER"),
 		PostgresPassword: os.Getenv("POSTGRES_PASSWORD"),
@@ -36,8 +48,30 @@ func Load() Config {
 
 		RedisPassword: os.Getenv("REDIS_PASSWORD"),
 
-		MQTTClientID:              "device-service-" + os.Getenv("HOSTNAME"),
+		MQTTClientID:              "device-service-" + mustGetEnv("HOSTNAME"),
 		MQTTDeviceServiceUsername: os.Getenv("MQTT_DEVICE_SERVICE_USERNAME"),
 		MQTTDeviceServicePassword: os.Getenv("MQTT_DEVICE_SERVICE_PASSWORD"),
+
+		StaleThreshold: time.Duration(staleSeconds) * time.Second,
 	}
+}
+
+func mustGetEnv(key string) string {
+	v := os.Getenv(key)
+	if v == "" {
+		panic("missing required env var: " + key)
+	}
+	return v
+}
+
+func getEnvInt(key string, defaultVal int) int {
+	s := os.Getenv(key)
+	if s == "" {
+		return defaultVal
+	}
+	v, err := strconv.Atoi(s)
+	if err != nil {
+		return defaultVal
+	}
+	return v
 }
