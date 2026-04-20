@@ -65,7 +65,7 @@ func LogRoom(rc *cache.RoomCache) {
 	log.Printf("[cache] room %s:", rc.RoomID)
 	log.Printf("  timezone:       %s", rc.UserTimezone)
 	log.Printf("  deadband_temp:  %.1f", rc.DeadbandTemp)
-	log.Printf("  deadband_hum:   %.1f", rc.DeadbandHumidity)
+	log.Printf("  deadband_hum:   %.1f", rc.DeadbandHum)
 	log.Printf("  mode:           %s", rc.DesiredState.Mode)
 	log.Printf("  active_periods: %d", len(rc.ActivePeriods))
 	log.Printf("  actuator_types: %d", len(rc.ActuatorHwIDs))
@@ -79,7 +79,7 @@ func LogFullRoom(rc *cache.RoomCache) {
 	log.Printf("[cache] room %s:", rc.RoomID)
 	log.Printf("  timezone:      %s", rc.UserTimezone)
 	log.Printf("  deadband_temp: %.1f", rc.DeadbandTemp)
-	log.Printf("  deadband_hum:  %.1f", rc.DeadbandHumidity)
+	log.Printf("  deadband_hum:  %.1f", rc.DeadbandHum)
 
 	logDesiredState(rc.DesiredState)
 	logPeriods(rc.ActivePeriods)

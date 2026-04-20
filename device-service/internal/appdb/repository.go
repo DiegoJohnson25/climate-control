@@ -446,11 +446,11 @@ func buildRoomCache(
 	actuatorHwIDs := buildActuatorHwIDs(devices, actuatorsByDevice)
 
 	return &cache.RoomCache{
-		RoomID:           rm.ID,
-		UserTimezone:     rm.Timezone,
-		Location:         loc,
-		DeadbandTemp:     rm.DeadbandTemp,
-		DeadbandHumidity: rm.DeadbandHum,
+		RoomID:       rm.ID,
+		UserTimezone: rm.Timezone,
+		Location:     loc,
+		DeadbandTemp: rm.DeadbandTemp,
+		DeadbandHum:  rm.DeadbandHum,
 		DesiredState: cache.DesiredStateCache{
 			Mode: ds.Mode,
 			Targets: map[string]*float64{
