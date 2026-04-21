@@ -47,6 +47,15 @@ jobs:
       - name: Copy CI env file
         run: cp .env.ci .env
 
+      - name: Generate Mosquitto password file
+        run: |
+          set -a && source .env && set +a
+          docker run --rm eclipse-mosquitto:2 sh -c " \
+            mosquitto_passwd -c -b /tmp/passwd ${MQTT_DEVICE_USERNAME} ${MQTT_DEVICE_PASSWORD} && \
+            mosquitto_passwd -b /tmp/passwd ${MQTT_DEVICE_SERVICE_USERNAME} ${MQTT_DEVICE_SERVICE_PASSWORD} && \
+            mosquitto_passwd -b /tmp/passwd healthcheck healthcheck && \
+            cat /tmp/passwd" | grep -v "^Adding" > deployments/mosquitto/passwd
+
       - name: Start stack
         run: |
           docker compose -f docker-compose.yml -f deployments/docker-compose.services.yml up -d
