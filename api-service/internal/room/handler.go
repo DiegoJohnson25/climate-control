@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/DiegoJohnson25/climate-control/api-service/internal/ctxkeys"
-	"github.com/DiegoJohnson25/climate-control/shared/models"
+	"github.com/DiegoJohnson25/climate-control/api-service/internal/models"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )

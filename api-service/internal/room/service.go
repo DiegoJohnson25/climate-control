@@ -7,8 +7,10 @@ import (
 	"context"
 	"time"
 
-	"github.com/DiegoJohnson25/climate-control/shared/models"
+	"github.com/DiegoJohnson25/climate-control/api-service/internal/events"
+	"github.com/DiegoJohnson25/climate-control/api-service/internal/models"
 	"github.com/google/uuid"
+	"github.com/redis/go-redis/v9"
 )
 
 // indefiniteOverride is stored in manual_override_until when the user requests
@@ -18,10 +20,11 @@ var indefiniteOverride = time.Date(9999, 12, 31, 23, 59, 59, 0, time.UTC)
 
 type Service struct {
 	rooms *Repository
+	rdb   *redis.Client
 }
 
-func NewService(rooms *Repository) *Service {
-	return &Service{rooms: rooms}
+func NewService(rooms *Repository, rdb *redis.Client) *Service {
+	return &Service{rooms: rooms, rdb: rdb}
 }
 
 func (s *Service) List(ctx context.Context, userID uuid.UUID) ([]models.Room, error) {
@@ -40,6 +43,7 @@ func (s *Service) Create(ctx context.Context, userID uuid.UUID, name string) (*m
 	if err := s.rooms.CreateWithDesiredState(ctx, &rm); err != nil {
 		return nil, err
 	}
+	events.NotifyRoomCreated(ctx, s.rdb, rm.ID)
 	return &rm, nil
 }
 
@@ -60,6 +64,7 @@ func (s *Service) Update(ctx context.Context, id, userID uuid.UUID, name string,
 	if err := s.rooms.Update(ctx, rm); err != nil {
 		return nil, err
 	}
+	events.NotifyRoomConfigChanged(ctx, s.rdb, rm.ID)
 	return rm, nil
 }
 
@@ -69,7 +74,11 @@ func (s *Service) Delete(ctx context.Context, id, userID uuid.UUID) error {
 	if _, err := s.rooms.GetByIDAndUserID(ctx, id, userID); err != nil {
 		return err
 	}
-	return s.rooms.Delete(ctx, id)
+	if err := s.rooms.Delete(ctx, id); err != nil {
+		return err
+	}
+	events.NotifyRoomDeleted(ctx, s.rdb, id)
+	return nil
 }
 
 // GetDesiredState returns the desired state for a room the user owns.
@@ -136,5 +145,6 @@ func (s *Service) UpdateDesiredState(ctx context.Context, roomID, userID uuid.UU
 	if err := s.rooms.UpdateDesiredState(ctx, &ds); err != nil {
 		return models.DesiredState{}, err
 	}
+	events.NotifyDesiredStateChanged(ctx, s.rdb, roomID)
 	return ds, nil
 }

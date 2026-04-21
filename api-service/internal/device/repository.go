@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/DiegoJohnson25/climate-control/shared/models"
+	"github.com/DiegoJohnson25/climate-control/api-service/internal/models"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
@@ -183,9 +183,6 @@ func (r *Repository) Update(ctx context.Context, dev *models.Device) error {
 	if isUniqueViolation(err) {
 		return ErrNameTaken
 	}
-
-	// TODO Phase 3e: events.NotifyDeviceChanged via Redis XADD.
-
 	return err
 }
 

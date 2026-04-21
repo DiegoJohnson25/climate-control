@@ -55,7 +55,7 @@ type RoomCache struct {
 	UserTimezone     string         // kept for reference/reload
 	Location         *time.Location // pre-resolved from UserTimezone
 	DeadbandTemp     float64
-	DeadbandHumidity float64
+	DeadbandHum      float64
 	DesiredState     DesiredStateCache
 	ActivePeriods    []SchedulePeriodCache
 	ActuatorHwIDs    map[string][]string             // actuator_type → []hw_id

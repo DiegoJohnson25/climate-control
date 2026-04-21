@@ -252,7 +252,7 @@ All Go code follows `.claude/COMMENTING_STYLE.md`. Key rules:
 | Auth | JWT | golang-jwt library |
 | Refresh tokens | Redis | go-redis/v9 (`github.com/redis/go-redis/v9`) |
 | Rate limiting | Redis | Applied at router level |
-| Event streaming | Redis Streams | `stream:device_assignments` — Phase 3e |
+| Event streaming | Redis Streams | `stream:cache_invalidation` — Phase 3e |
 | MQTT client | Eclipse Paho Go | aliased as `pahomqtt` to avoid package name collision |
 | Broker | Mosquitto 2.x | Auth enabled, ACL per username |
 | App DB | PostgreSQL 17 | Internal port 5432, host port 5433 |
@@ -463,7 +463,6 @@ a duty cycle fraction (0.0–1.0) at any time bucket resolution without casting.
 - `schedule_periods.start_time` / `end_time` — `string` on model, `TEXT` in DB
 - `TargetHumidity` shortened to `TargetHum` on `models.SchedulePeriod` and `desired_states`
 - No constraint tags — migrations handle all constraints
-- `desired_states` table name set via `TableName()` method
 - GORM used for appdb only — TimescaleDB uses raw pgx
 - Shared models never have GORM association fields (e.g. no `Sensors []Sensor` on Device)
   — enriched types live in the domain package that needs them
@@ -719,7 +718,7 @@ staggered. Default 5 minutes. Calls `ReloadRoom` — preserves runtime fields.
 
 ### Redis stream events (Phase 3e — planned)
 
-**Stream:** `stream:device_assignments`
+**Stream:** `stream:cache_invalidation`
 **Consumer group:** `device-service` (one group, all instances share it)
 **Consumer name:** per-instance hostname
 
@@ -1054,7 +1053,7 @@ Responsibilities:
 - Subscribe to `devices/+/telemetry` on Mosquitto
 - Maintain local `map[string]{RoomID, DeviceID}` cache keyed on `hw_id`
 - Warm cache from DB on startup
-- Consume `stream:device_assignments` Redis Stream as consumer group `bridge` — independent
+- Consume `stream:cache_invalidation` Redis Stream as consumer group `bridge` — independent
   from the `device-service` consumer group, same stream, separate offset
 - Publish to Kafka topic `telemetry` with key = `room_id` bytes
 - Stamp `{room_id, device_id}` onto the Kafka message payload for downstream consumers

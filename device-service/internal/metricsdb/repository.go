@@ -45,10 +45,10 @@ type ControlLogEntry struct {
 	TargetTemp       *float64
 	TargetHum        *float64
 	ControlSource    string
-	HeaterCmd        *int
-	HumidifierCmd    *int
-	ReadingCountTemp *int
-	ReadingCountHum  *int
+	HeaterCmd        *int16
+	HumidifierCmd    *int16
+	ReadingCountTemp *int16
+	ReadingCountHum  *int16
 	SchedulePeriodID *uuid.UUID
 }
 

@@ -8,19 +8,22 @@ package schedule
 import (
 	"context"
 
+	"github.com/DiegoJohnson25/climate-control/api-service/internal/events"
+	"github.com/DiegoJohnson25/climate-control/api-service/internal/models"
 	"github.com/DiegoJohnson25/climate-control/api-service/internal/room"
-	"github.com/DiegoJohnson25/climate-control/shared/models"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
+	"github.com/redis/go-redis/v9"
 )
 
 type Service struct {
 	schedules *Repository
 	rooms     *room.Repository
+	rdb       *redis.Client
 }
 
-func NewService(schedules *Repository, rooms *room.Repository) *Service {
-	return &Service{schedules: schedules, rooms: rooms}
+func NewService(schedules *Repository, rooms *room.Repository, rdb *redis.Client) *Service {
+	return &Service{schedules: schedules, rooms: rooms, rdb: rdb}
 }
 
 // ---------------------------------------------------------------------------
@@ -113,6 +116,7 @@ func (s *Service) Activate(ctx context.Context, id, userID uuid.UUID) (*models.S
 		return nil, err
 	}
 
+	events.NotifyScheduleChanged(ctx, s.rdb, sched.RoomID)
 	sched.IsActive = true
 	return sched, nil
 
@@ -133,6 +137,7 @@ func (s *Service) Deactivate(ctx context.Context, id, userID uuid.UUID) (*models
 		return nil, err
 	}
 
+	events.NotifyScheduleChanged(ctx, s.rdb, sched.RoomID)
 	sched.IsActive = false
 	return sched, nil
 }
@@ -171,22 +176,27 @@ func (s *Service) CreatePeriod(ctx context.Context, scheduleID, userID uuid.UUID
 		return nil, err
 	}
 
+	if sched.IsActive {
+		events.NotifyScheduleChanged(ctx, s.rdb, sched.RoomID)
+	}
+
 	return &period, nil
 }
 
-// GetPeriodByID returns the period with the given ID.
+// GetPeriodByID returns the period and its parent schedule.
 // Verifies ownership by checking the parent schedule belongs to userID.
-func (s *Service) GetPeriodByID(ctx context.Context, periodID, userID uuid.UUID) (*models.SchedulePeriod, error) {
+func (s *Service) GetPeriodByID(ctx context.Context, periodID, userID uuid.UUID) (*models.SchedulePeriod, *models.Schedule, error) {
 	period, err := s.schedules.GetPeriodByID(ctx, periodID)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	if _, err := s.schedules.GetByID(ctx, period.ScheduleID, userID); err != nil {
-		return nil, ErrPeriodNotFound
+	sched, err := s.schedules.GetByID(ctx, period.ScheduleID, userID)
+	if err != nil {
+		return nil, nil, ErrPeriodNotFound
 	}
 
-	return period, nil
+	return period, sched, nil
 }
 
 // ListPeriodsBySchedule returns all periods for the given schedule.
@@ -202,7 +212,7 @@ func (s *Service) ListPeriodsBySchedule(ctx context.Context, scheduleID, userID 
 // UpdatePeriod updates all mutable fields on an existing period.
 // Verifies ownership and checks for overlap (excluding the period being updated).
 func (s *Service) UpdatePeriod(ctx context.Context, periodID, userID uuid.UUID, input PeriodInput) (*models.SchedulePeriod, error) {
-	period, err := s.GetPeriodByID(ctx, periodID, userID)
+	period, sched, err := s.GetPeriodByID(ctx, periodID, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -217,17 +227,30 @@ func (s *Service) UpdatePeriod(ctx context.Context, periodID, userID uuid.UUID, 
 		return nil, err
 	}
 
+	if sched.IsActive {
+		events.NotifyScheduleChanged(ctx, s.rdb, sched.RoomID)
+	}
+
 	return &built, nil
 }
 
 // DeletePeriod removes a period by ID.
 // Verifies ownership before deleting.
 func (s *Service) DeletePeriod(ctx context.Context, periodID, userID uuid.UUID) error {
-	if _, err := s.GetPeriodByID(ctx, periodID, userID); err != nil {
+	_, sched, err := s.GetPeriodByID(ctx, periodID, userID)
+	if err != nil {
 		return err
 	}
 
-	return s.schedules.DeletePeriod(ctx, periodID)
+	if err := s.schedules.DeletePeriod(ctx, periodID); err != nil {
+		return err
+	}
+
+	if sched.IsActive {
+		events.NotifyScheduleChanged(ctx, s.rdb, sched.RoomID)
+	}
+
+	return nil
 }
 
 // ---------------------------------------------------------------------------

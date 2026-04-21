@@ -3,7 +3,6 @@ module github.com/DiegoJohnson25/climate-control/api-service
 go 1.25.0
 
 require (
-	github.com/DiegoJohnson25/climate-control/shared v0.0.0
 	github.com/gin-gonic/gin v1.12.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
@@ -11,6 +10,7 @@ require (
 	github.com/lib/pq v1.12.3
 	github.com/redis/go-redis/v9 v9.18.0
 	golang.org/x/crypto v0.49.0
+	gorm.io/driver/postgres v1.6.0
 	gorm.io/gorm v1.31.1
 )
 
@@ -52,7 +52,4 @@ require (
 	golang.org/x/sys v0.42.0 // indirect
 	golang.org/x/text v0.35.0 // indirect
 	google.golang.org/protobuf v1.36.10 // indirect
-	gorm.io/driver/postgres v1.6.0 // indirect
 )
-
-replace github.com/DiegoJohnson25/climate-control/shared => ../shared

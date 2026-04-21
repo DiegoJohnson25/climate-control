@@ -11,14 +11,19 @@ import (
 	"github.com/DiegoJohnson25/climate-control/device-service/internal/cache"
 	"github.com/DiegoJohnson25/climate-control/device-service/internal/config"
 	"github.com/DiegoJohnson25/climate-control/device-service/internal/connect"
+	"github.com/DiegoJohnson25/climate-control/device-service/internal/debug"
 	"github.com/DiegoJohnson25/climate-control/device-service/internal/ingestion"
-	"github.com/DiegoJohnson25/climate-control/device-service/internal/logging"
 	"github.com/DiegoJohnson25/climate-control/device-service/internal/metricsdb"
 	"github.com/DiegoJohnson25/climate-control/device-service/internal/mqtt"
+	"github.com/DiegoJohnson25/climate-control/device-service/internal/scheduler"
+	"github.com/DiegoJohnson25/climate-control/device-service/internal/stream"
 )
 
 func main() {
 	cfg := config.Load()
+	debug.SetTraceIngestion(cfg.TraceIngestion)
+	debug.SetTraceTick(cfg.TraceTick)
+	debug.SetLevel(debug.ParseLevel(cfg.DebugLevel))
 
 	db, err := connect.Postgres(cfg.PostgresUser, cfg.PostgresPassword, cfg.PostgresDB)
 	if err != nil {
@@ -42,30 +47,29 @@ func main() {
 	}
 	log.Println("mqtt: connected")
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	store := cache.NewStore()
 	appRepo := appdb.NewRepository(db)
-	if err := appRepo.WarmCache(store); err != nil {
+	if err := appRepo.WarmCache(ctx, store); err != nil {
 		log.Fatalf("cache warm: %v", err)
 	}
-	logging.LogSummary(store)
 
 	metricsRepo := metricsdb.NewRepository(metricsPool)
 	source := mqtt.NewSource(mqttClient)
 	ingestor := ingestion.NewIngestor(source, store, metricsRepo, cfg.StaleThreshold)
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 
 	if err := ingestor.Run(ctx); err != nil {
 		log.Fatalf("telemetry ingestion start: %v", err)
 	}
 	log.Println("telemetry ingestion: started")
 
-	// TODO Phase 3d: start control loop / scheduler
-	// TODO Phase 3e: start Redis stream consumer
+	sched := scheduler.NewScheduler(store, appRepo, metricsRepo, mqttClient, cfg)
+	sched.Start(ctx)
 
-	// rdb unused until Phase 3e
-	_ = rdb
+	consumer := stream.NewConsumer(rdb, store, appRepo, sched)
+	consumer.Run(ctx)
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
@@ -74,8 +78,7 @@ func main() {
 
 	cancel()
 	ingestor.Stop()
-
-	// TODO Phase 3d: wg.Wait() once scheduler goroutines are added
-
+	sched.Wait()
+	consumer.Wait()
 	log.Println("device-service: shutdown complete")
 }
