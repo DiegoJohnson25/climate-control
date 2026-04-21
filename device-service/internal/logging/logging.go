@@ -12,12 +12,6 @@ import (
 	"github.com/google/uuid"
 )
 
-// LogSummary logs a concise startup summary of the cache store.
-func LogSummary(store *cache.Store) {
-	log.Printf("device-service: cache warm complete — rooms: %d  devices: %d",
-		len(store.RoomIDs()), len(store.DeviceHwIDs()))
-}
-
 // LogStore logs a summary of the entire cache store — room count and a
 // summary line per room. Use LogFullStore for full field detail.
 func LogStore(store *cache.Store) {

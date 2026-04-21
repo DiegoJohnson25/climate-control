@@ -12,7 +12,6 @@ import (
 	"github.com/DiegoJohnson25/climate-control/device-service/internal/config"
 	"github.com/DiegoJohnson25/climate-control/device-service/internal/connect"
 	"github.com/DiegoJohnson25/climate-control/device-service/internal/ingestion"
-	"github.com/DiegoJohnson25/climate-control/device-service/internal/logging"
 	"github.com/DiegoJohnson25/climate-control/device-service/internal/metricsdb"
 	"github.com/DiegoJohnson25/climate-control/device-service/internal/mqtt"
 	"github.com/DiegoJohnson25/climate-control/device-service/internal/scheduler"
@@ -52,7 +51,6 @@ func main() {
 	if err := appRepo.WarmCache(ctx, store); err != nil {
 		log.Fatalf("cache warm: %v", err)
 	}
-	logging.LogSummary(store)
 
 	metricsRepo := metricsdb.NewRepository(metricsPool)
 	source := mqtt.NewSource(mqttClient)

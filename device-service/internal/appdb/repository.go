@@ -7,6 +7,7 @@ package appdb
 import (
 	"context"
 	"fmt"
+	"log"
 	"strconv"
 	"strings"
 	"time"
@@ -190,6 +191,7 @@ func (r *Repository) WarmCache(ctx context.Context, store *cache.Store) error {
 		store.AddDevice(dev.HwID, dc)
 	}
 
+	log.Printf("appdb: cache warm complete — rooms: %d  devices: %d", len(rooms), len(devices))
 	return nil
 }
 
