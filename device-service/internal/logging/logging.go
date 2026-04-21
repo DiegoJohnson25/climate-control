@@ -1,5 +1,5 @@
-// Package logging provides cache inspection helpers for device-service.
-// Used at startup and for debugging cache state under development.
+// Package logging provides structured debug helpers for device-service.
+// Covers cache inspection, control tick results, and stream event tracing.
 package logging
 
 import (
@@ -14,16 +14,15 @@ import (
 
 // LogSummary logs a concise startup summary of the cache store.
 func LogSummary(store *cache.Store) {
-	log.Printf("[startup] device-service ready")
-	log.Printf("[startup]   rooms:   %d", len(store.RoomIDs()))
-	log.Printf("[startup]   devices: %d", len(store.DeviceHwIDs()))
+	log.Printf("device-service: cache warm complete — rooms: %d  devices: %d",
+		len(store.RoomIDs()), len(store.DeviceHwIDs()))
 }
 
 // LogStore logs a summary of the entire cache store — room count and a
 // summary line per room. Use LogFullStore for full field detail.
 func LogStore(store *cache.Store) {
 	roomIDs := store.RoomIDs()
-	log.Printf("[cache] store: %d rooms", len(roomIDs))
+	log.Printf("cache: store: %d rooms", len(roomIDs))
 	for _, id := range roomIDs {
 		rc := store.Room(id)
 		if rc == nil {
@@ -36,7 +35,7 @@ func LogStore(store *cache.Store) {
 // LogFullStore logs the complete cache state for every room at full granularity.
 func LogFullStore(store *cache.Store) {
 	roomIDs := store.RoomIDs()
-	log.Printf("[cache] store: %d rooms", len(roomIDs))
+	log.Printf("cache: store: %d rooms", len(roomIDs))
 	for _, id := range roomIDs {
 		rc := store.Room(id)
 		if rc == nil {
@@ -49,7 +48,7 @@ func LogFullStore(store *cache.Store) {
 // LogDevices logs all cached devices including their sensors and actuators.
 func LogDevices(store *cache.Store) {
 	hwIDs := store.DeviceHwIDs()
-	log.Printf("[cache] devices: %d", len(hwIDs))
+	log.Printf("cache: devices: %d", len(hwIDs))
 	for _, hwID := range hwIDs {
 		dc := store.Device(hwID)
 		if dc == nil {
@@ -64,7 +63,7 @@ func LogRoom(rc *cache.RoomCache) {
 	rc.Mu.RLock()
 	defer rc.Mu.RUnlock()
 
-	log.Printf("[cache] room %s:", rc.RoomID)
+	log.Printf("cache: room %s:", rc.RoomID)
 	log.Printf("  timezone:       %s", rc.UserTimezone)
 	log.Printf("  deadband_temp:  %.1f", rc.DeadbandTemp)
 	log.Printf("  deadband_hum:   %.1f", rc.DeadbandHum)
@@ -78,7 +77,7 @@ func LogFullRoom(rc *cache.RoomCache) {
 	rc.Mu.RLock()
 	defer rc.Mu.RUnlock()
 
-	log.Printf("[cache] room %s:", rc.RoomID)
+	log.Printf("cache: room %s:", rc.RoomID)
 	log.Printf("  timezone:      %s", rc.UserTimezone)
 	log.Printf("  deadband_temp: %.1f", rc.DeadbandTemp)
 	log.Printf("  deadband_hum:  %.1f", rc.DeadbandHum)
@@ -104,7 +103,7 @@ func LogDevice(dc *cache.DeviceCache) {
 		roomStr = roomID.String()
 	}
 
-	log.Printf("[cache] device %s:", dc.HwID)
+	log.Printf("cache: device %s:", dc.HwID)
 	log.Printf("  device_id: %s", dc.DeviceID)
 	log.Printf("  room_id:   %s", roomStr)
 	log.Printf("  sensors:   %d", len(dc.Sensors))
@@ -213,41 +212,55 @@ func activeDays(dow [8]bool) []string {
 // scheduler.tick when investigating missing MQTT commands.
 func LogTickResult(roomID uuid.UUID, result control.TickResult) {
 	entry := result.LogEntry
-	log.Printf("[tick] room %s: source=%s mode=%s commands=%d",
+	log.Printf("tick: room %s: source=%s mode=%s commands=%d",
 		roomID, entry.ControlSource, entry.Mode, len(result.Commands))
 
 	if len(result.Commands) == 0 {
-		log.Printf("[tick]   no commands generated")
+		log.Printf("tick:   no commands generated")
 	}
 	for _, cmd := range result.Commands {
-		log.Printf("[tick]   cmd: hw_id=%s actuator=%s state=%v", cmd.HwID, cmd.ActuatorType, cmd.State)
+		log.Printf("tick:   cmd: hw_id=%s actuator=%s state=%v", cmd.HwID, cmd.ActuatorType, cmd.State)
 	}
 
 	if entry.AvgTemp != nil {
-		log.Printf("[tick]   avg_temp=%.2f (n=%s) target=%s",
+		log.Printf("tick:   avg_temp=%.2f (n=%s) target=%s",
 			*entry.AvgTemp,
 			formatInt16Ptr(entry.ReadingCountTemp),
 			formatFloat64Ptr(entry.TargetTemp),
 		)
 	} else {
-		log.Printf("[tick]   avg_temp=none target=%s", formatFloat64Ptr(entry.TargetTemp))
+		log.Printf("tick:   avg_temp=none target=%s", formatFloat64Ptr(entry.TargetTemp))
 	}
 
 	if entry.AvgHum != nil {
-		log.Printf("[tick]   avg_hum=%.2f (n=%s) target=%s",
+		log.Printf("tick:   avg_hum=%.2f (n=%s) target=%s",
 			*entry.AvgHum,
 			formatInt16Ptr(entry.ReadingCountHum),
 			formatFloat64Ptr(entry.TargetHum),
 		)
 	} else {
-		log.Printf("[tick]   avg_hum=none target=%s", formatFloat64Ptr(entry.TargetHum))
+		log.Printf("tick:   avg_hum=none target=%s", formatFloat64Ptr(entry.TargetHum))
 	}
 
 	if entry.HeaterCmd != nil {
-		log.Printf("[tick]   heater_cmd=%d", *entry.HeaterCmd)
+		log.Printf("tick:   heater_cmd=%d", *entry.HeaterCmd)
 	}
 	if entry.HumidifierCmd != nil {
-		log.Printf("[tick]   humidifier_cmd=%d", *entry.HumidifierCmd)
+		log.Printf("tick:   humidifier_cmd=%d", *entry.HumidifierCmd)
+	}
+}
+
+// LogStreamEvent logs a successfully processed cache invalidation event.
+// Call after ACK so only events that were fully handled appear in the log.
+// values is the raw XMessage.Values map — room_id and hw_id are extracted
+// if present so device events can be distinguished from room-only events.
+func LogStreamEvent(event, msgID string, values map[string]any) {
+	roomID, _ := values["room_id"].(string)
+	hwID, _ := values["hw_id"].(string)
+	if hwID != "" {
+		log.Printf("stream: event=%s msg=%s room=%s hw_id=%s", event, msgID, roomID, hwID)
+	} else {
+		log.Printf("stream: event=%s msg=%s room=%s", event, msgID, roomID)
 	}
 }
 

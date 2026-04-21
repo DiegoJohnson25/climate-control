@@ -226,7 +226,7 @@ func (s *Scheduler) runCacheRefresh(ctx context.Context, roomID uuid.UUID, stagg
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if err := s.appRepo.ReloadRoom(s.store, roomID); err != nil {
+			if err := s.appRepo.ReloadRoom(ctx, s.store, roomID); err != nil {
 				log.Printf("scheduler: cache refresh for room %s: %v", roomID, err)
 			}
 		}

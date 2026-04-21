@@ -16,6 +16,7 @@ import (
 	"github.com/DiegoJohnson25/climate-control/device-service/internal/metricsdb"
 	"github.com/DiegoJohnson25/climate-control/device-service/internal/mqtt"
 	"github.com/DiegoJohnson25/climate-control/device-service/internal/scheduler"
+	"github.com/DiegoJohnson25/climate-control/device-service/internal/stream"
 )
 
 func main() {
@@ -43,9 +44,12 @@ func main() {
 	}
 	log.Println("mqtt: connected")
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	store := cache.NewStore()
 	appRepo := appdb.NewRepository(db)
-	if err := appRepo.WarmCache(store); err != nil {
+	if err := appRepo.WarmCache(ctx, store); err != nil {
 		log.Fatalf("cache warm: %v", err)
 	}
 	logging.LogSummary(store)
@@ -54,9 +58,6 @@ func main() {
 	source := mqtt.NewSource(mqttClient)
 	ingestor := ingestion.NewIngestor(source, store, metricsRepo, cfg.StaleThreshold)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
 	if err := ingestor.Run(ctx); err != nil {
 		log.Fatalf("telemetry ingestion start: %v", err)
 	}
@@ -64,9 +65,9 @@ func main() {
 
 	sched := scheduler.NewScheduler(store, appRepo, metricsRepo, mqttClient, cfg)
 	sched.Start(ctx)
-	log.Println("scheduler: started")
-	// TODO Phase 3e: start Redis stream consumer
-	_ = rdb
+
+	consumer := stream.NewConsumer(rdb, store, appRepo, sched)
+	consumer.Run(ctx)
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
@@ -76,6 +77,6 @@ func main() {
 	cancel()
 	ingestor.Stop()
 	sched.Wait()
-	// TODO Phase 3e: call stream consumer Wait() for graceful shutdown
+	consumer.Wait()
 	log.Println("device-service: shutdown complete")
 }

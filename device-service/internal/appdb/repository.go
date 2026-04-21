@@ -5,6 +5,7 @@
 package appdb
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 	"strings"
@@ -87,9 +88,9 @@ func NewRepository(db *gorm.DB) *Repository {
 
 // WarmCache loads all owned rooms and their associated data from appdb and
 // populates the store. Called once at startup before any goroutines start.
-func (r *Repository) WarmCache(store *cache.Store) error {
+func (r *Repository) WarmCache(ctx context.Context, store *cache.Store) error {
 	var allRoomIDs []uuid.UUID
-	if err := r.db.Raw(`SELECT id FROM rooms`).Scan(&allRoomIDs).Error; err != nil {
+	if err := r.db.WithContext(ctx).Raw(`SELECT id FROM rooms`).Scan(&allRoomIDs).Error; err != nil {
 		return fmt.Errorf("fetch room ids: %w", err)
 	}
 
@@ -104,22 +105,22 @@ func (r *Repository) WarmCache(store *cache.Store) error {
 		return nil
 	}
 
-	rooms, err := r.fetchRooms(ownedIDs)
+	rooms, err := r.fetchRooms(ctx, ownedIDs)
 	if err != nil {
 		return fmt.Errorf("fetch rooms: %w", err)
 	}
 
-	desiredStates, err := r.fetchDesiredStates(ownedIDs)
+	desiredStates, err := r.fetchDesiredStates(ctx, ownedIDs)
 	if err != nil {
 		return fmt.Errorf("fetch desired states: %w", err)
 	}
 
-	periods, err := r.fetchActivePeriods(ownedIDs)
+	periods, err := r.fetchActivePeriods(ctx, ownedIDs)
 	if err != nil {
 		return fmt.Errorf("fetch active periods: %w", err)
 	}
 
-	devices, err := r.fetchDevicesByRoom(ownedIDs)
+	devices, err := r.fetchDevicesByRoom(ctx, ownedIDs)
 	if err != nil {
 		return fmt.Errorf("fetch devices: %w", err)
 	}
@@ -133,11 +134,11 @@ func (r *Repository) WarmCache(store *cache.Store) error {
 	var sensors []sensorRow
 	var actuators []actuatorRow
 	if len(allDeviceIDs) > 0 {
-		sensors, err = r.fetchSensors(allDeviceIDs)
+		sensors, err = r.fetchSensors(ctx, allDeviceIDs)
 		if err != nil {
 			return fmt.Errorf("fetch sensors: %w", err)
 		}
-		actuators, err = r.fetchActuators(allDeviceIDs)
+		actuators, err = r.fetchActuators(ctx, allDeviceIDs)
 		if err != nil {
 			return fmt.Errorf("fetch actuators: %w", err)
 		}
@@ -195,8 +196,8 @@ func (r *Repository) WarmCache(store *cache.Store) error {
 // ReloadRoom refreshes the cache entry for a single room. Called by the stream
 // consumer on room-scoped events and by the periodic refresh ticker.
 // Preserves runtime-only fields from the existing cache entry.
-func (r *Repository) ReloadRoom(store *cache.Store, roomID uuid.UUID) error {
-	rm, err := r.fetchRoom(roomID)
+func (r *Repository) ReloadRoom(ctx context.Context, store *cache.Store, roomID uuid.UUID) error {
+	rm, err := r.fetchRoom(ctx, roomID)
 	if err != nil {
 		return fmt.Errorf("fetch room %s: %w", roomID, err)
 	}
@@ -205,17 +206,17 @@ func (r *Repository) ReloadRoom(store *cache.Store, roomID uuid.UUID) error {
 		return nil
 	}
 
-	ds, err := r.fetchDesiredState(roomID)
+	ds, err := r.fetchDesiredState(ctx, roomID)
 	if err != nil {
 		return fmt.Errorf("fetch desired state for room %s: %w", roomID, err)
 	}
 
-	periods, err := r.fetchActivePeriodsForRoom(roomID)
+	periods, err := r.fetchActivePeriodsForRoom(ctx, roomID)
 	if err != nil {
 		return fmt.Errorf("fetch active periods for room %s: %w", roomID, err)
 	}
 
-	devices, err := r.fetchDevicesForRoom(roomID)
+	devices, err := r.fetchDevicesForRoom(ctx, roomID)
 	if err != nil {
 		return fmt.Errorf("fetch devices for room %s: %w", roomID, err)
 	}
@@ -227,7 +228,7 @@ func (r *Repository) ReloadRoom(store *cache.Store, roomID uuid.UUID) error {
 
 	actuatorsByDevice := make(map[uuid.UUID][]actuatorRow)
 	if len(deviceIDs) > 0 {
-		acts, err := r.fetchActuators(deviceIDs)
+		acts, err := r.fetchActuators(ctx, deviceIDs)
 		if err != nil {
 			return fmt.Errorf("fetch actuators for room %s: %w", roomID, err)
 		}
@@ -263,8 +264,8 @@ func (r *Repository) ReloadRoom(store *cache.Store, roomID uuid.UUID) error {
 
 // ReloadDevice refreshes the cache entry for a single device. Called by the
 // stream consumer on device_changed events.
-func (r *Repository) ReloadDevice(store *cache.Store, hwID string) error {
-	dev, err := r.fetchDeviceByHwID(hwID)
+func (r *Repository) ReloadDevice(ctx context.Context, store *cache.Store, hwID string) error {
+	dev, err := r.fetchDeviceByHwID(ctx, hwID)
 	if err != nil {
 		return fmt.Errorf("fetch device %s: %w", hwID, err)
 	}
@@ -273,12 +274,12 @@ func (r *Repository) ReloadDevice(store *cache.Store, hwID string) error {
 		return nil
 	}
 
-	sensors, err := r.fetchSensors([]uuid.UUID{dev.ID})
+	sensors, err := r.fetchSensors(ctx, []uuid.UUID{dev.ID})
 	if err != nil {
 		return fmt.Errorf("fetch sensors for device %s: %w", hwID, err)
 	}
 
-	actuators, err := r.fetchActuators([]uuid.UUID{dev.ID})
+	actuators, err := r.fetchActuators(ctx, []uuid.UUID{dev.ID})
 	if err != nil {
 		return fmt.Errorf("fetch actuators for device %s: %w", hwID, err)
 	}
@@ -292,9 +293,9 @@ func (r *Repository) ReloadDevice(store *cache.Store, hwID string) error {
 // Query helpers
 // ---------------------------------------------------------------------------
 
-func (r *Repository) fetchRooms(roomIDs []uuid.UUID) ([]roomRow, error) {
+func (r *Repository) fetchRooms(ctx context.Context, roomIDs []uuid.UUID) ([]roomRow, error) {
 	var rows []roomRow
-	err := r.db.Raw(`
+	err := r.db.WithContext(ctx).Raw(`
 		SELECT r.id, r.user_id, r.deadband_temp, r.deadband_hum, u.timezone
 		FROM rooms r
 		JOIN users u ON u.id = r.user_id
@@ -303,9 +304,9 @@ func (r *Repository) fetchRooms(roomIDs []uuid.UUID) ([]roomRow, error) {
 	return rows, err
 }
 
-func (r *Repository) fetchDesiredStates(roomIDs []uuid.UUID) ([]desiredStateRow, error) {
+func (r *Repository) fetchDesiredStates(ctx context.Context, roomIDs []uuid.UUID) ([]desiredStateRow, error) {
 	var rows []desiredStateRow
-	err := r.db.Raw(`
+	err := r.db.WithContext(ctx).Raw(`
 		SELECT room_id, mode, target_temp, target_hum, manual_override_until
 		FROM desired_states
 		WHERE room_id IN ?
@@ -313,9 +314,9 @@ func (r *Repository) fetchDesiredStates(roomIDs []uuid.UUID) ([]desiredStateRow,
 	return rows, err
 }
 
-func (r *Repository) fetchActivePeriods(roomIDs []uuid.UUID) ([]activePeriodRow, error) {
+func (r *Repository) fetchActivePeriods(ctx context.Context, roomIDs []uuid.UUID) ([]activePeriodRow, error) {
 	var rows []activePeriodRow
-	err := r.db.Raw(`
+	err := r.db.WithContext(ctx).Raw(`
 		SELECT sp.id, s.room_id, sp.days_of_week, sp.start_time, sp.end_time,
 		       sp.mode, sp.target_temp, sp.target_hum
 		FROM schedule_periods sp
@@ -325,9 +326,9 @@ func (r *Repository) fetchActivePeriods(roomIDs []uuid.UUID) ([]activePeriodRow,
 	return rows, err
 }
 
-func (r *Repository) fetchDevicesByRoom(roomIDs []uuid.UUID) ([]deviceRow, error) {
+func (r *Repository) fetchDevicesByRoom(ctx context.Context, roomIDs []uuid.UUID) ([]deviceRow, error) {
 	var rows []deviceRow
-	err := r.db.Raw(`
+	err := r.db.WithContext(ctx).Raw(`
 		SELECT id, hw_id, room_id
 		FROM devices
 		WHERE room_id IN ?
@@ -335,9 +336,9 @@ func (r *Repository) fetchDevicesByRoom(roomIDs []uuid.UUID) ([]deviceRow, error
 	return rows, err
 }
 
-func (r *Repository) fetchSensors(deviceIDs []uuid.UUID) ([]sensorRow, error) {
+func (r *Repository) fetchSensors(ctx context.Context, deviceIDs []uuid.UUID) ([]sensorRow, error) {
 	var rows []sensorRow
-	err := r.db.Raw(`
+	err := r.db.WithContext(ctx).Raw(`
 		SELECT id, device_id, measurement_type
 		FROM sensors
 		WHERE device_id IN ?
@@ -345,9 +346,9 @@ func (r *Repository) fetchSensors(deviceIDs []uuid.UUID) ([]sensorRow, error) {
 	return rows, err
 }
 
-func (r *Repository) fetchActuators(deviceIDs []uuid.UUID) ([]actuatorRow, error) {
+func (r *Repository) fetchActuators(ctx context.Context, deviceIDs []uuid.UUID) ([]actuatorRow, error) {
 	var rows []actuatorRow
-	err := r.db.Raw(`
+	err := r.db.WithContext(ctx).Raw(`
 		SELECT id, device_id, actuator_type
 		FROM actuators
 		WHERE device_id IN ?
@@ -355,9 +356,9 @@ func (r *Repository) fetchActuators(deviceIDs []uuid.UUID) ([]actuatorRow, error
 	return rows, err
 }
 
-func (r *Repository) fetchRoom(roomID uuid.UUID) (*roomRow, error) {
+func (r *Repository) fetchRoom(ctx context.Context, roomID uuid.UUID) (*roomRow, error) {
 	var row roomRow
-	err := r.db.Raw(`
+	err := r.db.WithContext(ctx).Raw(`
 		SELECT r.id, r.user_id, r.deadband_temp, r.deadband_hum, u.timezone
 		FROM rooms r
 		JOIN users u ON u.id = r.user_id
@@ -372,9 +373,9 @@ func (r *Repository) fetchRoom(roomID uuid.UUID) (*roomRow, error) {
 	return &row, nil
 }
 
-func (r *Repository) fetchDesiredState(roomID uuid.UUID) (desiredStateRow, error) {
+func (r *Repository) fetchDesiredState(ctx context.Context, roomID uuid.UUID) (desiredStateRow, error) {
 	var row desiredStateRow
-	err := r.db.Raw(`
+	err := r.db.WithContext(ctx).Raw(`
 		SELECT room_id, mode, target_temp, target_hum, manual_override_until
 		FROM desired_states
 		WHERE room_id = ?
@@ -382,9 +383,9 @@ func (r *Repository) fetchDesiredState(roomID uuid.UUID) (desiredStateRow, error
 	return row, err
 }
 
-func (r *Repository) fetchActivePeriodsForRoom(roomID uuid.UUID) ([]activePeriodRow, error) {
+func (r *Repository) fetchActivePeriodsForRoom(ctx context.Context, roomID uuid.UUID) ([]activePeriodRow, error) {
 	var rows []activePeriodRow
-	err := r.db.Raw(`
+	err := r.db.WithContext(ctx).Raw(`
 		SELECT sp.id, s.room_id, sp.days_of_week, sp.start_time, sp.end_time,
 		       sp.mode, sp.target_temp, sp.target_hum
 		FROM schedule_periods sp
@@ -394,9 +395,9 @@ func (r *Repository) fetchActivePeriodsForRoom(roomID uuid.UUID) ([]activePeriod
 	return rows, err
 }
 
-func (r *Repository) fetchDevicesForRoom(roomID uuid.UUID) ([]deviceRow, error) {
+func (r *Repository) fetchDevicesForRoom(ctx context.Context, roomID uuid.UUID) ([]deviceRow, error) {
 	var rows []deviceRow
-	err := r.db.Raw(`
+	err := r.db.WithContext(ctx).Raw(`
 		SELECT id, hw_id, room_id
 		FROM devices
 		WHERE room_id = ?
@@ -404,9 +405,9 @@ func (r *Repository) fetchDevicesForRoom(roomID uuid.UUID) ([]deviceRow, error) 
 	return rows, err
 }
 
-func (r *Repository) fetchDeviceByHwID(hwID string) (*deviceRow, error) {
+func (r *Repository) fetchDeviceByHwID(ctx context.Context, hwID string) (*deviceRow, error) {
 	var row deviceRow
-	err := r.db.Raw(`
+	err := r.db.WithContext(ctx).Raw(`
 		SELECT id, hw_id, room_id
 		FROM devices
 		WHERE hw_id = ?
