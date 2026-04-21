@@ -44,6 +44,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Copy CI env file
+        run: cp .env.ci .env
+
       - name: Start stack
         run: |
           docker compose -f docker-compose.yml -f deployments/docker-compose.services.yml up -d
