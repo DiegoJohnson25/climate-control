@@ -30,6 +30,9 @@ jobs:
           go vet github.com/DiegoJohnson25/climate-control/device-service/...
           go vet github.com/DiegoJohnson25/climate-control/simulator-service/...
 
+      - name: Copy CI env file
+        run: cp .env.ci .env
+
       - name: Build Docker images
         run: docker compose -f docker-compose.yml -f deployments/docker-compose.services.yml build
 
@@ -40,9 +43,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Copy CI env file
-        run: cp .env.ci .env
 
       - name: Start stack
         run: |
