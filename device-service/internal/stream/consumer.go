@@ -225,7 +225,7 @@ func (c *Consumer) dispatch(ctx context.Context, msg redis.XMessage) {
 // Event handlers
 // ---------------------------------------------------------------------------
 
-func (c *Consumer) onRoomCreated(ctx context.Context, values map[string]interface{}) error {
+func (c *Consumer) onRoomCreated(ctx context.Context, values map[string]any) error {
 	roomID, err := extractRoomID(values)
 	if err != nil {
 		return err
@@ -237,7 +237,7 @@ func (c *Consumer) onRoomCreated(ctx context.Context, values map[string]interfac
 	return nil
 }
 
-func (c *Consumer) onRoomDeleted(ctx context.Context, values map[string]interface{}) error {
+func (c *Consumer) onRoomDeleted(_ context.Context, values map[string]any) error {
 	roomID, err := extractRoomID(values)
 	if err != nil {
 		return err
@@ -247,7 +247,7 @@ func (c *Consumer) onRoomDeleted(ctx context.Context, values map[string]interfac
 	return nil
 }
 
-func (c *Consumer) onRoomReload(ctx context.Context, values map[string]interface{}) error {
+func (c *Consumer) onRoomReload(ctx context.Context, values map[string]any) error {
 	roomID, err := extractRoomID(values)
 	if err != nil {
 		return err
@@ -258,7 +258,7 @@ func (c *Consumer) onRoomReload(ctx context.Context, values map[string]interface
 	return nil
 }
 
-func (c *Consumer) onDeviceChanged(ctx context.Context, values map[string]interface{}) error {
+func (c *Consumer) onDeviceChanged(ctx context.Context, values map[string]any) error {
 	hwID, err := extractString(values, "hw_id")
 	if err != nil {
 		return err
@@ -287,9 +287,9 @@ func (c *Consumer) ack(ctx context.Context, msgID string) {
 }
 
 // extractString retrieves a string value from an XMessage Values map.
-// go-redis returns field values as interface{} — they are always strings for
+// go-redis returns field values as any — they are always strings for
 // entries written by XAdd with string/any values.
-func extractString(values map[string]interface{}, key string) (string, error) {
+func extractString(values map[string]any, key string) (string, error) {
 	v, ok := values[key]
 	if !ok {
 		return "", fmt.Errorf("missing field %q", key)
@@ -302,7 +302,7 @@ func extractString(values map[string]interface{}, key string) (string, error) {
 }
 
 // extractRoomID extracts and parses the "room_id" field from an XMessage Values map.
-func extractRoomID(values map[string]interface{}) (uuid.UUID, error) {
+func extractRoomID(values map[string]any) (uuid.UUID, error) {
 	s, err := extractString(values, "room_id")
 	if err != nil {
 		return uuid.Nil, err
