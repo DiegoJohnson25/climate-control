@@ -1,7 +1,7 @@
 // Package simulator runs the per-device publish loop. Each device gets its own
 // goroutine, staggered across the tick interval to spread load, and publishes
 // a sensor-type keyed telemetry payload to devices/{hw_id}/telemetry. Room
-// state is the evolving unit — Phase 4 will replace the static baseValues with
+// state is the evolving unit — Phase 4b will replace the static baseValues with
 // a physics or drift model calculator.
 package simulator
 
@@ -26,7 +26,7 @@ import (
 type RoomState struct {
 	Provisioned provisioning.ProvisionedRoom
 	baseValues  map[string]float64
-	// TODO Phase 4: CurrentTemp, CurrentHumidity, calculator RoomCalculator.
+	// TODO Phase 4b: CurrentTemp, CurrentHumidity, calculator RoomCalculator.
 }
 
 func newRoomState(room provisioning.ProvisionedRoom) *RoomState {

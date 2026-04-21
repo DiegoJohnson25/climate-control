@@ -110,7 +110,7 @@ func (dc *DeviceCache) SetRoomID(roomID *uuid.UUID) {
 // duration of map reads/writes, not for operations on the objects within.
 // RoomCache and DeviceCache each have their own mutex for field-level access.
 //
-// assignedPartitions and numPartitions are unused until Phase 6 (Kafka).
+// assignedPartitions and numPartitions are unused until Phase 7b (Kafka).
 // They are stubbed here so the Kafka consumer group callbacks can populate
 // them without requiring structural changes to Store.
 type Store struct {
@@ -118,7 +118,7 @@ type Store struct {
 	rooms   map[uuid.UUID]*RoomCache // room_id → cache
 	devices map[string]*DeviceCache  // hw_id   → cache
 
-	// TODO Phase 6: populated by OnPartitionsAssigned / OnPartitionsRevoked
+	// TODO Phase 7b: populated by OnPartitionsAssigned / OnPartitionsRevoked
 	// callbacks from the franz-go Kafka consumer. Until then, assignedPartitions
 	// is always empty and OwnsRoom returns true for all rooms.
 	assignedPartitions map[int32]struct{}
@@ -202,7 +202,7 @@ func (s *Store) RoomIDs() []uuid.UUID {
 // OwnsRoom reports whether this instance is responsible for the given room.
 // Phase 3: always returns true — single instance owns all rooms.
 //
-// TODO Phase 6: replace with Kafka partition ownership check.
+// TODO Phase 7b: replace with Kafka partition ownership check.
 // murmur2(room_id) % numPartitions must be in assignedPartitions.
 // assignedPartitions is populated by OnPartitionsAssigned /
 // OnPartitionsRevoked callbacks from the franz-go Kafka consumer.

@@ -12,7 +12,7 @@ import (
 //
 // Phase 3: constructed by the MQTT adapter in mqtt/client.go after resolving
 // hw_id → RoomID from the device cache.
-// TODO Phase 6: constructed identically by the Kafka consumer adapter —
+// TODO Phase 7b: constructed identically by the Kafka consumer adapter —
 // ingestion.Process is unchanged. The bridge stamps RoomID onto the Kafka
 // message payload; the adapter reads it directly rather than resolving from cache.
 type TelemetryMessage struct {

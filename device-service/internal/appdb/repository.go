@@ -96,7 +96,7 @@ func (r *Repository) WarmCache(ctx context.Context, store *cache.Store) error {
 		return fmt.Errorf("fetch room ids: %w", err)
 	}
 
-	// filter to owned rooms (Phase 3: all rooms, Phase 5: hash-filtered)
+	// filter to owned rooms (Phase 3: all rooms, Phase 7b: hash-filtered)
 	ownedIDs := make([]uuid.UUID, 0, len(allRoomIDs))
 	for _, id := range allRoomIDs {
 		if store.OwnsRoom(id) {

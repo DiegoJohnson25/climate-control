@@ -24,9 +24,9 @@ type readingPayload struct {
 
 // Source implements ingestion.Source for MQTT transport. It subscribes to
 // Mosquitto and delivers parsed TelemetryMessages to the ingestion handler.
-// Active in Phase 3–5; replaced by kafka.Source in Phase 6.
+// Active in Phase 3–6e; replaced by kafka.Source in Phase 7b.
 //
-// TODO Phase 6: remove this file. Replace mqtt.NewSource in main.go with
+// TODO Phase 7b: remove this file. Replace mqtt.NewSource in main.go with
 // kafka.NewSource — ingestion.Ingestor and ingestion.Process are unchanged.
 type Source struct {
 	client *Client

@@ -6,10 +6,10 @@ import "context"
 // deliver telemetry messages to the ingestion layer.
 //
 // Implementations:
-//   - mqtt.Source — subscribes to Mosquitto, active Phase 3–5
-//   - kafka.Source — consumes from Kafka topic, Phase 6 onwards
+//   - mqtt.Source — subscribes to Mosquitto, active Phase 3–6e
+//   - kafka.Source — consumes from Kafka topic, Phase 7b onwards
 //
-// TODO Phase 6: replace mqtt.Source construction in main.go with kafka.Source.
+// TODO Phase 7b: replace mqtt.Source construction in main.go with kafka.Source.
 // Ingestor, Process, and this interface are unchanged.
 type Source interface {
 	// Start begins delivering telemetry messages to handler. It must return

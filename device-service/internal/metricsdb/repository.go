@@ -95,7 +95,6 @@ func (r *Repository) WriteSensorReadings(ctx context.Context, readings []SensorR
 
 // WriteControlLogEntry inserts a single control loop tick record into
 // room_control_logs. Called once per room per tick by the control loop.
-// TODO Phase 3d: wire up call site in control loop evaluation.
 func (r *Repository) WriteControlLogEntry(ctx context.Context, entry ControlLogEntry) error {
 	_, err := r.pool.Exec(ctx,
 		`INSERT INTO room_control_logs (
