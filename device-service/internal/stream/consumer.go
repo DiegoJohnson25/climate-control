@@ -18,6 +18,7 @@ import (
 
 	"github.com/DiegoJohnson25/climate-control/device-service/internal/appdb"
 	"github.com/DiegoJohnson25/climate-control/device-service/internal/cache"
+	"github.com/DiegoJohnson25/climate-control/device-service/internal/debug"
 	"github.com/DiegoJohnson25/climate-control/device-service/internal/scheduler"
 )
 
@@ -217,7 +218,7 @@ func (c *Consumer) dispatch(ctx context.Context, msg redis.XMessage) {
 	}
 
 	c.ack(ctx, msg.ID)
-	// logging.LogStreamEvent(event, msg.ID, msg.Values)
+	debug.LogStreamEvent(event, msg.ID, msg.Values)
 }
 
 // ---------------------------------------------------------------------------

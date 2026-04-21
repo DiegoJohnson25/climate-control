@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/DiegoJohnson25/climate-control/device-service/internal/cache"
+	"github.com/DiegoJohnson25/climate-control/device-service/internal/debug"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 	"gorm.io/gorm"
@@ -192,6 +193,7 @@ func (r *Repository) WarmCache(ctx context.Context, store *cache.Store) error {
 	}
 
 	log.Printf("appdb: cache warm complete — rooms: %d  devices: %d", len(rooms), len(devices))
+	debug.LogStore(store)
 	return nil
 }
 
@@ -261,6 +263,7 @@ func (r *Repository) ReloadRoom(ctx context.Context, store *cache.Store, roomID 
 	}
 
 	store.AddRoom(roomID, rc)
+	debug.LogRoom(rc)
 	return nil
 }
 
@@ -288,6 +291,7 @@ func (r *Repository) ReloadDevice(ctx context.Context, store *cache.Store, hwID 
 
 	dc := buildDeviceCache(*dev, sensors, actuators)
 	store.AddDevice(hwID, dc)
+	debug.LogDevice(dc)
 	return nil
 }
 

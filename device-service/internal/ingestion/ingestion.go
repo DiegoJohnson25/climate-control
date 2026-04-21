@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/DiegoJohnson25/climate-control/device-service/internal/cache"
+	"github.com/DiegoJohnson25/climate-control/device-service/internal/debug"
 	"github.com/DiegoJohnson25/climate-control/device-service/internal/metricsdb"
 )
 
@@ -104,6 +105,14 @@ func (n *Ingestor) Process(ctx context.Context, msg TelemetryMessage) error {
 
 	if len(resolved) == 0 {
 		return nil
+	}
+
+	if debug.AtIngestion() {
+		types := make([]string, len(resolved))
+		for i, rr := range resolved {
+			types[i] = rr.reading.Type
+		}
+		debug.LogIngestion(msg.HwID, *roomID, types)
 	}
 
 	rc.Mu.Lock()

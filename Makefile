@@ -48,6 +48,36 @@ restart-device:
 rebuild-simulator:
 	$(COMPOSE_ALL) up --build -d simulator-service
 
+# ── Debug ─────────────────────────────────────────────────────────────────────
+
+# Set device-service debug level and restart to apply
+# Usage: make debug-device-info / debug-device-verbose / debug-device-off
+#        make debug-device-trace-ingestion-on/off
+#        make debug-device-trace-tick-on/off
+debug-device-info:
+	sed -i 's/^DEVICE_DEBUG=.*/DEVICE_DEBUG=info/' .env
+	DEVICE_DEBUG=info $(COMPOSE_ALL) up -d device-service
+
+debug-device-verbose:
+	sed -i 's/^DEVICE_DEBUG=.*/DEVICE_DEBUG=verbose/' .env
+	DEVICE_DEBUG=verbose $(COMPOSE_ALL) up -d device-service
+
+debug-device-off:
+	sed -i 's/^DEVICE_DEBUG=.*/DEVICE_DEBUG=/' .env
+	DEVICE_DEBUG= $(COMPOSE_ALL) up -d device-service
+
+debug-device-trace-ingestion-on:
+	sed -i 's/^DEVICE_TRACE_INGESTION=.*/DEVICE_TRACE_INGESTION=true/' .env
+
+debug-device-trace-ingestion-off:
+	sed -i 's/^DEVICE_TRACE_INGESTION=.*/DEVICE_TRACE_INGESTION=false/' .env
+
+debug-device-trace-tick-on:
+	sed -i 's/^DEVICE_TRACE_TICK=.*/DEVICE_TRACE_TICK=true/' .env
+
+debug-device-trace-tick-off:
+	sed -i 's/^DEVICE_TRACE_TICK=.*/DEVICE_TRACE_TICK=false/' .env
+
 # ── Logs ──────────────────────────────────────────────────────────────────────
 
 logs:
@@ -244,3 +274,4 @@ mqtt-device:
 	  -h localhost -t 'devices/$(HW_ID)/#' \
 	  -u $${MQTT_DEVICE_SERVICE_USERNAME} -P $${MQTT_DEVICE_SERVICE_PASSWORD} \
 	  -v
+

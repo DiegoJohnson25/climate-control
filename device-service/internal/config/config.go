@@ -32,6 +32,11 @@ type Config struct {
 	StaleThreshold       time.Duration
 	TickInterval         time.Duration
 	CacheRefreshInterval time.Duration
+
+	// Debug
+	DebugLevel       string // "info", "verbose", or "" (off)
+	TraceIngestion   bool   // log every processed telemetry message
+	TraceTick        bool   // log every control tick evaluation
 }
 
 // Load reads environment variables into a Config. Panics if any variable
@@ -59,6 +64,10 @@ func Load() Config {
 		StaleThreshold:       time.Duration(staleSeconds) * time.Second,
 		TickInterval:         time.Duration(tickSeconds) * time.Second,
 		CacheRefreshInterval: time.Duration(cacheRefreshMinutes) * time.Minute,
+
+		DebugLevel:     os.Getenv("DEVICE_DEBUG"),
+		TraceIngestion: os.Getenv("DEVICE_TRACE_INGESTION") == "true",
+		TraceTick:      os.Getenv("DEVICE_TRACE_TICK") == "true",
 	}
 }
 

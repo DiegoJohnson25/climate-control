@@ -17,6 +17,7 @@ import (
 	"github.com/DiegoJohnson25/climate-control/device-service/internal/cache"
 	"github.com/DiegoJohnson25/climate-control/device-service/internal/config"
 	"github.com/DiegoJohnson25/climate-control/device-service/internal/control"
+	"github.com/DiegoJohnson25/climate-control/device-service/internal/debug"
 	"github.com/DiegoJohnson25/climate-control/device-service/internal/metricsdb"
 	"github.com/DiegoJohnson25/climate-control/device-service/internal/mqtt"
 )
@@ -169,6 +170,7 @@ func (s *Scheduler) tick(ctx context.Context, roomID uuid.UUID, now time.Time) {
 	}
 
 	result := control.Evaluate(rc, now, s.cfg.StaleThreshold)
+	debug.LogTick(roomID, result)
 
 	// publish commands — update ActuatorStates only for successful publishes
 	for _, cmd := range result.Commands {
@@ -212,10 +214,12 @@ func (s *Scheduler) tick(ctx context.Context, roomID uuid.UUID, now time.Time) {
 func (s *Scheduler) runCacheRefresh(ctx context.Context, roomID uuid.UUID, stagger time.Duration) {
 	defer s.wg.Done()
 
-	select {
-	case <-time.After(s.cfg.CacheRefreshInterval + stagger):
-	case <-ctx.Done():
-		return
+	if stagger > 0 {
+		select {
+		case <-time.After(stagger):
+		case <-ctx.Done():
+			return
+		}
 	}
 
 	ticker := time.NewTicker(s.cfg.CacheRefreshInterval)

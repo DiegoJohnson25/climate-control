@@ -11,6 +11,7 @@ import (
 	"github.com/DiegoJohnson25/climate-control/device-service/internal/cache"
 	"github.com/DiegoJohnson25/climate-control/device-service/internal/config"
 	"github.com/DiegoJohnson25/climate-control/device-service/internal/connect"
+	"github.com/DiegoJohnson25/climate-control/device-service/internal/debug"
 	"github.com/DiegoJohnson25/climate-control/device-service/internal/ingestion"
 	"github.com/DiegoJohnson25/climate-control/device-service/internal/metricsdb"
 	"github.com/DiegoJohnson25/climate-control/device-service/internal/mqtt"
@@ -20,6 +21,9 @@ import (
 
 func main() {
 	cfg := config.Load()
+	debug.SetTraceIngestion(cfg.TraceIngestion)
+	debug.SetTraceTick(cfg.TraceTick)
+	debug.SetLevel(debug.ParseLevel(cfg.DebugLevel))
 
 	db, err := connect.Postgres(cfg.PostgresUser, cfg.PostgresPassword, cfg.PostgresDB)
 	if err != nil {
