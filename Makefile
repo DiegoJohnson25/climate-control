@@ -15,13 +15,17 @@ up:
 	$(COMPOSE_ALL) up -d
 
 down:
-	$(COMPOSE_ALL) down
+	$(COMPOSE_ALL) --profile simulation down
 
 down-hard:
-	$(COMPOSE_ALL) down -v
+	$(COMPOSE_ALL) --profile simulation down -v
 
 rebuild:
 	$(COMPOSE_ALL) up --build -d
+
+demo:
+	$(MAKE) up
+	$(MAKE) simulator-start SIM=default
 
 # ── Infrastructure ────────────────────────────────────────────────────────────
 
@@ -46,7 +50,7 @@ restart-device:
 	$(COMPOSE_ALL) restart device-service
 
 rebuild-simulator:
-	$(COMPOSE_ALL) up --build -d simulator-service
+	$(COMPOSE_ALL) --profile simulation up --build -d simulator-service
 
 # ── Debug ─────────────────────────────────────────────────────────────────────
 
@@ -151,7 +155,7 @@ test-api-smoke:
 # Usage: make simulator-start SIM=default
 simulator-start:
 	$(COMPOSE_ALL) stop simulator-service 2>/dev/null || true
-	SIMULATOR_SIMULATION=$(or $(SIM),default) $(COMPOSE_ALL) up -d simulator-service
+	SIMULATOR_SIMULATION=$(or $(SIM),default) $(COMPOSE_ALL) --profile simulation up -d simulator-service
 
 # Stop running simulator — data preserved in DB
 simulator-stop:

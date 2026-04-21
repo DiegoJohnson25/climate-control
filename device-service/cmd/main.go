@@ -12,6 +12,7 @@ import (
 	"github.com/DiegoJohnson25/climate-control/device-service/internal/config"
 	"github.com/DiegoJohnson25/climate-control/device-service/internal/connect"
 	"github.com/DiegoJohnson25/climate-control/device-service/internal/debug"
+	"github.com/DiegoJohnson25/climate-control/device-service/internal/health"
 	"github.com/DiegoJohnson25/climate-control/device-service/internal/ingestion"
 	"github.com/DiegoJohnson25/climate-control/device-service/internal/metricsdb"
 	"github.com/DiegoJohnson25/climate-control/device-service/internal/mqtt"
@@ -50,6 +51,9 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	healthSrv := health.NewServer()
+	go healthSrv.Run(ctx)
+
 	store := cache.NewStore()
 	appRepo := appdb.NewRepository(db)
 	if err := appRepo.WarmCache(ctx, store); err != nil {
@@ -70,6 +74,9 @@ func main() {
 
 	consumer := stream.NewConsumer(rdb, store, appRepo, sched)
 	consumer.Run(ctx)
+
+	healthSrv.SetReady()
+	log.Println("device-service: ready")
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)

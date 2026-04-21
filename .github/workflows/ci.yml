@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-and-vet:
+    name: Build and vet
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.work
+
+      - name: Build all services
+        run: go build ./...
+
+      - name: Vet all services
+        run: go vet ./...
+
+      - name: Build Docker images
+        run: docker compose -f docker-compose.yml -f deployments/docker-compose.services.yml build
+
+  stack-startup:
+    name: Stack startup
+    runs-on: ubuntu-latest
+    needs: build-and-vet
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Copy CI env file
+        run: cp .env.ci .env
+
+      - name: Start stack
+        run: |
+          docker compose -f docker-compose.yml -f deployments/docker-compose.services.yml up -d
+
+      - name: Wait for services to become healthy
+        run: |
+          docker compose -f docker-compose.yml -f deployments/docker-compose.services.yml \
+            wait postgres timescaledb redis mosquitto api-service device-service
+
+      - name: Verify no containers have exited unexpectedly
+        run: |
+          EXITED=$(docker compose -f docker-compose.yml -f deployments/docker-compose.services.yml \
+            ps --status exited --format json \
+            | jq -r '.[].Name' \
+            | grep -v -E 'migrate-appdb|migrate-metricsdb')
+          if [ -n "$EXITED" ]; then
+            echo "Unexpected exited containers: $EXITED"
+            docker compose -f docker-compose.yml -f deployments/docker-compose.services.yml logs
+            exit 1
+          fi
+
+      - name: Tear down
+        if: always()
+        run: |
+          docker compose -f docker-compose.yml -f deployments/docker-compose.services.yml down -v
