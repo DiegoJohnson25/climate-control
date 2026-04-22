@@ -59,9 +59,11 @@ jobs:
       - name: Start stack
         run: |
           docker compose -f docker-compose.yml -f deployments/docker-compose.services.yml up -d
-      - name: Show device-service logs
+      
+      - name: Show service logs
         run: |
           sleep 20
+          docker compose -f docker-compose.yml -f deployments/docker-compose.services.yml logs api-service
           docker compose -f docker-compose.yml -f deployments/docker-compose.services.yml logs device-service
 
       - name: Wait for services to become healthy
