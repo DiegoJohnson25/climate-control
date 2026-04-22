@@ -14,9 +14,9 @@ The project serves as a portfolio piece demonstrating distributed systems design
 
 **api-service** — Gin REST API. Owns all user-facing configuration: rooms, devices, schedules, desired state. Writes to PostgreSQL (appdb) via GORM. Publishes cache invalidation events to a Redis Stream on any state change that device-service needs to know about. JWT auth with Redis-backed refresh token rotation.
 
-**device-service** — Standalone Go binary, no HTTP server. Subscribes to MQTT telemetry (Phases 3–6) or Kafka (Phase 7), maintains an in-memory cache of room and device state, runs a bang-bang control loop per room, publishes actuator commands via MQTT, writes sensor readings and control logs to TimescaleDB. Consumes the Redis Stream from api-service to keep its cache in sync.
+**device-service** — Standalone Go binary. Minimal HTTP server on `:8081` for health checks only. Subscribes to MQTT telemetry (Phases 3–6) or Kafka (Phase 7), maintains an in-memory cache of room and device state, runs a bang-bang control loop per room, publishes actuator commands via MQTT, writes sensor readings and control logs to TimescaleDB. Consumes the Redis Stream from api-service to keep its cache in sync.
 
-**simulator-service** — Provisions simulated users, rooms, devices, and schedules via the api-service REST API. Publishes realistic sensor telemetry via MQTT. Reacts to actuator commands — room temperature and humidity drift based on active actuator contributions. Allows the full system to be demonstrated without physical hardware.
+**simulator-service** — Provisions simulated users, rooms, devices, and schedules via the api-service REST API. Publishes realistic sensor telemetry via MQTT. Reacts to actuator commands — room temperature and humidity evolve based on active actuator contributions and passive return-to-ambient. Allows the full system to be demonstrated without physical hardware. Started via `docker compose --profile simulation` or `make simulator-start`.
 
 **mqtt-bridge** — New service added in Phase 7. Subscribes to Mosquitto telemetry, resolves hw_id to room_id, and produces to Kafka. The only service that talks to Mosquitto for telemetry in Phase 7 — device-service no longer subscribes to Mosquitto directly.
 
@@ -38,8 +38,10 @@ The project serves as a portfolio piece demonstrating distributed systems design
 - Phase 3c ✅ — device-service ingestion: MQTT source, TimescaleDB writes
 - Phase 3d ✅ — device-service control loop: bang-bang, command publishing, scheduler
 - Phase 3e ✅ — device-service stream: Redis stream consumer, cache invalidation
+- Phase 4a ✅ — CI pipeline, device-service health server, compose health checks, simulator profile
+- Phase 4b ✅ — reactive room model, environment model, time scaling, physical units
 
-**Active branch:** none — clean main, about to start Phase 4a
+**Active branch:** none — clean main, about to start Phase 4c
 
 ---
 
@@ -47,10 +49,8 @@ The project serves as a portfolio piece demonstrating distributed systems design
 
 | Phase | Branch | Scope |
 |---|---|---|
-| 1–3e | — | Repo scaffold, full API, device-service, simulator scaffold | ✅ Done |
-| 4a | `feat/ci-basic` | Build + vet all Go services, Docker Compose stack startup verification, container health checks |
-| 4b | `feat/simulator-reactive` | `RoomModelCalculator` interface, reactive room model, actuator command subscriptions, `RoomState` with `HeatInput`, device template rates |
-| 4c | `feat/simulator-schedules` | Schedule definitions in simulation YAML, provisioning at bootstrap, teardown implementation |
+| 1–4b | — | Repo scaffold, full API, device-service, simulator scaffold, CI, reactive model | ✅ Done |
+| 4c | `feat/simulator-schedules` | Schedule definitions in simulation YAML, provisioning at bootstrap, teardown implementation, two additional demo users |
 | 5a | `feat/api-service-climate` | `GET /rooms/:id/climate`, `GET /rooms/:id/climate/history`, Postman verified |
 | 5b | `feat/nginx` | Single entry point, static file serving, API proxy via Docker DNS, horizontal scaling demonstrated, Postman environments updated |
 | 6a | `feat/client-scaffold` | Vite project, routing, auth flow, JWT handling, persistent nav, SWR setup |
@@ -98,6 +98,7 @@ climate-control/
 │       ├── logging/      # logging.go — LogSummary, LogStore, LogFullStore etc.
 │       ├── ingestion/    # source.go, ingestion.go, message.go
 │       ├── mqtt/         # client.go, source.go
+│       ├── health/       # health.go — readiness HTTP server on :8081
 │       ├── control/      # bang-bang logic, command publishing
 │       ├── scheduler/    # per-room ticker goroutines, lifecycle management
 │       └── stream/       # Redis stream consumer, cache invalidation
@@ -105,14 +106,14 @@ climate-control/
 │   ├── cmd/main.go       # flag parsing, run/teardown modes, signal handling
 │   ├── config/
 │   │   ├── templates/    # rooms.yaml, devices.yaml
-│   │   ├── simulations/  # default.yaml, multi-room.yaml, cache-test.yaml etc.
+│   │   ├── simulations/  # default.yaml, cache-test.yaml, demo.yaml
 │   │   └── credentials/  # gitignored, written at runtime for interactive groups
 │   └── internal/
 │       ├── api/          # client.go — HTTP client for api-service
-│       ├── config/       # config.go — env + YAML loading, template resolution
+│       ├── config/       # config.go — env + YAML loading, template resolution, timing derivation
 │       ├── mqtt/         # client.go — Paho wrapper
 │       ├── provisioning/ # provisioning.go — bootstrap, identity generation
-│       └── simulator/    # simulator.go — publish loop, room model, RoomState
+│       └── simulator/    # simulator.go, room_state.go, model.go
 ├── web-client/           # Phase 6 — Vite + React SPA
 ├── mqtt-bridge/          # Phase 7 — MQTT → Kafka bridge service
 ├── deployments/
@@ -129,6 +130,7 @@ climate-control/
 ├── docker-compose.yml
 ├── go.work
 ├── Makefile
+├── .env.ci               # committed placeholder env for CI
 └── .claude/
     └── COMMENTING_STYLE.md
 ```
@@ -202,6 +204,7 @@ climate-control/
 |---|---|
 | Newman + Postman | API integration and smoke tests |
 | NGINX | Reverse proxy, static file serving, TLS termination — Phase 5 |
+| GitHub Actions | CI — build/vet all Go services, Docker Compose stack startup verification |
 
 ---
 
@@ -235,7 +238,7 @@ MQTT_DEVICE_PASSWORD=changeme
 
 # Device service tuning
 CONTROL_STALE_THRESHOLD_SECONDS=90
-CONTROL_TICK_INTERVAL_SECONDS=30
+CONTROL_TICK_INTERVAL_SECONDS=10
 CONTROL_CACHE_REFRESH_MINUTES=5
 DEVICE_DEBUG=           # "info" for key event logging, "verbose" for full cache/tick detail
 DEVICE_TRACE_INGESTION=false
@@ -252,6 +255,7 @@ API_PORT=8080
 # Simulator
 SIMULATOR_EMAIL=simulator@local.dev
 SIMULATOR_PASSWORD=changeme
+SIMULATOR_SIMULATION=default
 ```
 
 Internal Docker ports are always hardcoded in connection strings — env var ports are
@@ -334,7 +338,7 @@ types: `gorm:"type:integer[]"` on `pq.Int64Array` fields.
 ### Commenting style
 
 All Go code follows `.claude/COMMENTING_STYLE.md`. Key rules:
-- Package comments in primary file, starting with "Package <name>."
+- Package comments in primary file, starting with "Package <n>."
 - Godoc on exported symbols that need them — start with symbol name, end with period.
   Trivial constructors, self-documenting DTOs, descriptive error sentinels need no comment.
 - File-level section breaks: three-line 75-dash bars with title case label.
@@ -430,6 +434,8 @@ Server picks resolution internally: 1h → raw, 6h → 5min buckets,
 - `manual_override_until = 9999-12-31T23:59:59Z` means indefinite override
 - API contract: client sends `"indefinite"`, timestamp string, or `null`
 - `desired_states.id` is vestigial — `room_id` is the natural PK but migration not worth it
+- Default deadbands set in `room.Service.Create` as named constants — not in DB migration:
+  `defaultTempDeadband = 0.5` and `defaultHumDeadband = 2.0`
 
 ### Capability checks
 - `mode = AUTO` + `target_temp NOT NULL` → room must have temperature sensor + heater
@@ -460,17 +466,22 @@ Server picks resolution internally: 1h → raw, 6h → 5min buckets,
 
 See `docs/architecture/device-service.md` for full detail. Key points:
 
-**Startup sequence:** load config → connect → warm cache → start ingestion →
-create/drain Redis consumer group → start stream consumer → start per-room
-control loop goroutines (staggered) → start periodic cache refresh → block on signal.
+**Startup sequence:** load config → connect → start health server (returns 503) →
+warm cache → start ingestion → create/drain Redis consumer group → start stream
+consumer → start per-room control loop goroutines (staggered) → start periodic
+cache refresh → mark health server ready (returns 200) → block on signal.
+
+**Health server:** minimal HTTP server on `:8081`, internal to container only —
+not published on host. Returns 503 until `SetReady()` called after full startup,
+then 200. Port hardcoded in `internal/health` package.
 
 **Timing constants:**
 
 | Parameter | Env var | Default | Rationale |
 |---|---|---|---|
-| Simulator tick interval | — | 30s | Matches realistic ESP32 polling rate |
+| Simulator tick interval | — | 10s | Matches CONTROL_TICK_INTERVAL_SECONDS |
 | Stale threshold | `CONTROL_STALE_THRESHOLD_SECONDS` | 90s | 3-reading window — silent >90s means unavailable |
-| Control loop tick | `CONTROL_TICK_INTERVAL_SECONDS` | 30s | No benefit evaluating faster than sensor rate |
+| Control loop tick | `CONTROL_TICK_INTERVAL_SECONDS` | 10s | Shared with simulator as system heartbeat |
 | Cache refresh interval | `CONTROL_CACHE_REFRESH_MINUTES` | 5min | Safety net for missed stream events |
 | Stream block timeout | — | 5s | Bounds shutdown latency |
 
@@ -505,6 +516,11 @@ The Kafka bridge handles telemetry only.
 
 See `docs/architecture/simulator.md` for full detail. Key points:
 
+**Invocation:** simulator-service has `profiles: ["simulation"]` in docker-compose —
+excluded from normal `docker compose up`. Use `make simulator-start SIM=<n>` or
+`make demo` (starts stack + default simulation). `docker compose run` bypasses
+profiles and is used for teardown.
+
 **Config system:** two-file separation — template files define reusable room and
 device types; simulation files compose them into a topology. Templates dissolved
 into flat concrete structs at load time. Simulation selected via `--simulation` flag
@@ -519,57 +535,109 @@ hw_id:  sim-{sim_name}-{user_idx}-{room_idx}-{device_idx}
 **Provisioning:** login-first auth (register only on 401), idempotent via 409 handling,
 upfront list fetching. Phase 4c adds schedule provisioning and teardown.
 
-**Reactive room model (Phase 4b):**
+**Environment model:**
 
-`RoomState` holds runtime values shared across goroutines:
+All rooms use a single `EnvironmentModel` with a thermal equation applied uniformly
+per measurement type. The model is agnostic to measurement type — temperature and
+humidity use the same equation with different parameters.
+
+```
+effectiveAmbient = Ambient[type] + N(0, roomNoise[type])
+energyInput      = heatInput[type] * simulatedTickSeconds
+passiveLoss      = conductance[type] * (Current[type] - effectiveAmbient) * simulatedTickSeconds
+delta[type]      = (energyInput - passiveLoss) / thermalMass[type]
+```
+
+Base physical constants defined once in `internal/config/config.go`:
+
+| Constant | Value | Unit |
+|---|---|---|
+| `baseThermalMassTemperature` | 10,000,000 | J/°C |
+| `baseThermalMassHumidity` | 325 | abstract moisture units |
+| `baseConductanceTemperature` | 100 | W/°C |
+| `baseConductanceHumidity` | 0.001 | %RH/s per %RH |
+| `baseRateTemperature` | 1000 | W |
+| `baseRateHumidity` | 0.009 | %RH/s |
+
+Templates carry only scale multipliers — `thermal_mass_scale` and `conductance_scale`
+on room templates, `rate_scale` on device actuator entries. Simulation file entries
+can override template scales. All defaults to 1.0 if absent.
+
+**Two-axis room behaviour:**
+
+- `type` field on simulation room entry: `static` (default) or `reactive`. Static rooms have
+  no actuators contributing to `HeatInput` — `Current` tracks `EffectiveAmbient` only.
+  Reactive rooms accumulate actuator contributions. Both use the same `EnvironmentModel`.
+- `noisy` field on simulation room entry: `false` (default) or `true`. When false, all
+  noise fields are zeroed at config load time — model and sensors run deterministically.
+  Sensor noise is never zeroed — it is a hardware characteristic independent of `noisy`.
+
+**`RoomState`:**
 ```go
 type RoomState struct {
-    mu          sync.Mutex
-    Current     map[string]float64  // current environmental values, evolves per tick
-    Ambient     map[string]float64  // equilibrium starting point, never changes
-    HeatInput   map[string]float64  // sum of active actuator rate contributions by type
+    Mu            sync.RWMutex
+    Current       map[string]float64  // evolves per tick
+    Ambient       map[string]float64  // never changes after init
+    contributions map[string]map[string]float64  // hwID/type → measurementType → watts
+    heatInput     map[string]float64             // derived sum, recomputed on change
 }
 ```
 
-`RoomModelCalculator` interface assigned once at startup, called every tick:
-```go
-type RoomModelCalculator interface {
-    Tick(state *RoomState) map[string]float64  // returns deltas to apply to Current
-}
+Actuator contributions keyed by `hwID/measurementType` — a climate-controller with
+both temperature and humidity actuators has two independent contribution entries.
+`HeatInput()` returns a snapshot safe to read without holding `Mu`.
+
+**Goroutine structure (Option B — split concerns):**
+- Sensor goroutine per device with sensors — publish loop, calls `advanceRoom` each tick
+- Actuator goroutine per actuator per device — command subscription + watchdog
+- `advanceRoom` snapshots `HeatInput()` before acquiring `Mu.Lock`, passes snapshot
+  to `model.Advance` to avoid deadlock
+
+**Actuator command format:**
+```json
+{"actuator_type": "heater", "state": true}
+```
+`actuator_type` uses API-facing names (`heater`, `humidifier`). Translated to
+measurement types via `config.ActuatorNameToMeasurement` map at command receipt.
+Each actuator goroutine filters for its own measurement type and ignores others.
+
+**Time scaling:**
+
+```
+naturalInterval           = baseTickSeconds / timeScale
+effectivePublishInterval  = max(naturalInterval, minPublishInterval)
+simulatedTickSeconds      = timeScale * effectivePublishInterval.Seconds()
+watchdogTimeout           = baseTickSeconds * watchdogMultiplier (real wall-clock)
 ```
 
-Model types:
-- `noise` — `Current` never moves, Gaussian noise applied per device at publish time
-- `reactive` — `Current` drifts based on `HeatInput` minus passive cooling rate.
-  `passive_rate` is internal to `ReactiveCalculator`, not on `RoomState`
-- `physics` (Phase 9) — thermal equation consuming `HeatInput`, external temp profile
+`baseTickSeconds` = `CONTROL_TICK_INTERVAL_SECONDS` — shared with device-service.
+`minPublishIntervalMS` defaults to 500ms, overridable in simulation YAML.
+`maxTimeScale` = 400 — hard cap, validated at load time.
+`watchdogMultiplier` = 3 — hardcoded constant.
 
-Each actuator device subscribes to its command topic. On command receipt it updates
-its contribution in `RoomState.HeatInput` (add on `on`, subtract on `off`). Idempotent
-— same command repeated has no effect (important since commands re-sent every tick).
+Below the floor crossover (`timeScale ≤ baseTickSeconds / minPublishInterval`),
+`simulatedTickSeconds` always equals `baseTickSeconds`. Above the floor, publish rate
+is capped and `simulatedTickSeconds` grows proportionally to maintain correct physics.
 
-Device template carries actuator rates:
-```yaml
-actuators:
-  - type: heater
-    rates:
-      temperature: 0.5   # degrees per second when commanded on
-```
+**Equilibrium reference** (standard room, single device, ambient 20°C / 50% RH):
+- Temperature: `1000 / 100 = 10°C above ambient → 30°C`
+- Humidity: `0.009 / 0.001 = 9% above ambient → 59% RH`
+Parameters may need tuning once the client graphs are available.
 
-Rates are per-second — tick calculation multiplies by `tick_interval_seconds` so
-values are independent of tick frequency. Multiple heaters in the same room each
-contribute their rate independently — two heaters heat at double the rate. Physically
-correct and emergent from the model, not special-cased.
+**Simulation files:**
+- `default.yaml` — single user, standard room, separate sensor + actuator devices, `time_scale: 120`
+- `cache-test.yaml` — 5 rooms covering all capability combinations, `time_scale: 1.0`
+- `demo.yaml` — 2 users (single-sensor and multi-sensor variants), 3 rooms each, `time_scale: 120`
 
 **Teardown (Phase 4c):** `--mode=teardown` deletes all provisioned resources in
 dependency order: deactivate schedules → delete periods → delete schedules →
 unassign devices → delete devices → delete rooms → delete user.
 
-**Publish loop:** one goroutine per device, staggered offset
-`tickInterval * deviceIndex / totalDevices`.
+**Publish loop:** sensor goroutines staggered by `effectivePublishInterval * deviceIndex / totalDevices`.
 
 **Mosquitto users:** `device`, `device-service`, `healthcheck` (hardcoded credentials,
-not in `.env`). ACL restricts topics per username.
+not in `.env`). ACL restricts topics per username. Password file generated in CI
+via `make mosquitto-passwd` equivalent — not committed to repo.
 
 ---
 

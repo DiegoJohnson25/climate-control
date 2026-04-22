@@ -15,11 +15,14 @@ files compose them into a concrete topology.
 
 ### Template files
 
-`config/templates/rooms.yaml` — room model templates. Each template defines a
-model type and its parameters.
+`config/templates/rooms.yaml` — room environment templates. Each defines ambient
+base values, noise characteristics, and optional scale overrides for thermal mass
+and conductance. Physical base constants are defined once in
+`internal/config/config.go` — templates only carry scale multipliers.
 
 `config/templates/devices.yaml` — device templates. Each defines sensors,
-actuators, noise characteristics, and actuator rates.
+actuators, and their characteristics. Actuator entries carry `rate_scale` — a
+multiplier against the base rate constant for that measurement type.
 
 Template references are dissolved into flat concrete structs at load time. The
 runtime simulator never references the template system — it works entirely with
@@ -31,18 +34,17 @@ Located in `config/simulations/`. Selected via `--simulation=name` CLI flag.
 No default — must be explicit on every invocation.
 
 Each simulation file references room and device templates by ID and defines the
-topology: how many users, rooms per user, devices per room.
+topology: how many users, rooms per user, devices per room. Room entries carry
+`type` and `noisy` behavioural flags, and optional scale overrides that take
+precedence over template scales.
 
 ### Available simulations
 
 | File | Description |
 |---|---|
-| `default.yaml` | Single user, one room with full capability |
-| `multi-room.yaml` | Single user, multiple rooms |
-| `multi-user.yaml` | Multiple independent users |
-| `sensor-only.yaml` | Rooms with sensors but no actuators |
-| `multi-sensor.yaml` | Multiple sensor devices per room |
-| `cache-test.yaml` | 5 rooms covering all capability combinations — used for cache warm verification |
+| `default.yaml` | Single user, standard room, separate sensor + actuator devices, `time_scale: 120` |
+| `cache-test.yaml` | 5 rooms covering all capability combinations — used for cache warm verification, `time_scale: 1.0` |
+| `demo.yaml` | 2 users (single-sensor and multi-sensor variants), 3 rooms each, `time_scale: 120` |
 
 ### Available device templates
 
@@ -82,166 +84,239 @@ for uniqueness across a user's device namespace.
 
 All provisioning uses the api-service REST API — no direct DB access.
 
+Actuator types in YAML use measurement type names (`temperature`, `humidity`).
+These are translated to API-facing names (`heater`, `humidifier`) at provisioning
+time via `config.MeasurementToActuatorName`. The simulator's internal model uses
+measurement types exclusively.
+
 ---
 
 ## Room model architecture
 
+### Physical base constants
+
+All physical parameters are derived from base constants defined in
+`internal/config/config.go`. Templates and simulation files carry only scale
+multipliers — the base values are defined once and never in YAML.
+
+| Constant | Value | Unit |
+|---|---|---|
+| `baseThermalMassTemperature` | 10,000,000 | J/°C |
+| `baseThermalMassHumidity` | 325 | abstract moisture capacity |
+| `baseConductanceTemperature` | 100 | W/°C |
+| `baseConductanceHumidity` | 0.001 | %RH/s per %RH |
+| `baseRateTemperature` | 1000 | W |
+| `baseRateHumidity` | 0.009 | %RH/s |
+
+### Two-axis room behaviour
+
+Room behaviour is determined by two independent fields on the simulation file
+room entry, not the template:
+
+**`type`** (default: `static`) — complexity axis:
+- `static` — no actuator contributions. `Current` tracks effective ambient only.
+  Any device templates with actuators are ignored at the model level.
+- `reactive` — actuator contributions drive `Current` via the thermal equation.
+- `physics` (Phase 9) — full thermal model with external temperature profile.
+
+**`noisy`** (default: `false`) — stochastic axis:
+- `false` — all room-level and actuator noise fields zeroed at config load time.
+  Model and room advance are deterministic. Sensor noise is unaffected — it is a
+  hardware characteristic independent of this flag.
+- `true` — room-level noise applied as a perturbation to effective ambient each tick.
+
+Both axes are independent. A static noisy room wanders around ambient without
+actuator input. A reactive non-noisy room responds deterministically to commands.
+
+### EnvironmentModel
+
+Single implementation for all non-physics room types. The same thermal equation
+runs uniformly across all measurement types — temperature and humidity are handled
+identically with different parameter values.
+
+```
+effectiveAmbient = Ambient[type] + N(0, roomNoise[type])
+energyInput      = heatInput[type] * simulatedTickSeconds
+passiveLoss      = conductance[type] * (Current[type] - effectiveAmbient) * simulatedTickSeconds
+delta[type]      = (energyInput - passiveLoss) / thermalMass[type]
+```
+
+For static rooms, `heatInput` is always zero — `Current` tracks effective ambient
+via the passive loss term only. For noisy rooms, `roomNoise` is nonzero and
+`effectiveAmbient` wanders each tick. For non-noisy rooms, `roomNoise` was zeroed
+at config load — the equation is unchanged, the noise term just evaluates to zero.
+
+`PhysicsModel` (Phase 9) implements the same `RoomModel` interface with its own
+internal parameters.
+
 ### RoomState
 
-Shared runtime state for one room. Protected by `sync.Mutex`. Updated by
-actuator command goroutines, read by the publish loop tick.
+Shared runtime state for one room. Protected by `Mu sync.RWMutex`.
 
 ```go
 type RoomState struct {
-    mu        sync.Mutex
-    Current   map[string]float64  // current environmental values, evolves per tick
-    Ambient   map[string]float64  // equilibrium — set from base_temp/base_humidity, never changes
-    HeatInput map[string]float64  // sum of active actuator rate contributions by measurement type
+    Mu            sync.RWMutex
+    Current       map[string]float64             // evolves per tick
+    Ambient       map[string]float64             // never changes after init
+    contributions map[string]map[string]float64  // hwID/type → measurementType → watts
+    heatInput     map[string]float64             // derived sum of contributions
 }
 ```
 
-`Current` starts equal to `Ambient` at startup for all model types.
+`contributions` is keyed by `hwID/measurementType` — a device with both temperature
+and humidity actuators has two independent contribution entries. `heatInput` is
+always derived from `contributions` via `recomputeHeatInput` — never mutated
+directly. This eliminates floating-point drift and makes idempotent commands
+(same command repeated) a no-op by design.
 
-### RoomModelCalculator interface
-
-Assigned once at startup based on room template `model.type`. Called every tick
-by the publish loop to compute deltas.
-
-```go
-type RoomModelCalculator interface {
-    Tick(state *RoomState) map[string]float64  // returns deltas to apply to Current
-}
-```
-
-The interface isolates model-specific parameters from shared runtime state.
-`ReactiveCalculator` holds `passiveRate` as its own field — not on `RoomState`.
-`PhysicsCalculator` (Phase 9) holds `thermalMass`, `conductance` etc. as its own
-fields. `RoomState` has no knowledge of model type or parameters.
-
-### Model types
-
-**`noise`** — `Current` never moves. `Tick` returns zero deltas. Gaussian noise
-applied per device at publish time, independently of room state. Used when
-actuator feedback is not needed.
-
-**`reactive`** (Phase 4b) — `Current` drifts based on active actuator contributions
-minus a passive return-to-ambient rate. Physically: heater on → temperature rises,
-heater off → temperature falls back toward ambient. Symmetric for humidity.
-
-Tick calculation:
-```
-for each measurement type:
-    netDelta = (HeatInput[type] * tickSeconds) - (passiveRate[type] * tickSeconds)
-    Current[type] += netDelta
-    // clamp to reasonable bounds (5–40°C for temperature, 0–100% for humidity)
-```
-
-`passiveRate` is a field on `ReactiveCalculator`, not on `RoomState`. It
-represents degrees/percent per second return toward ambient when there is no
-heat input.
-
-**`physics`** (Phase 9) — thermal equation consuming `HeatInput`, external
-temperature profile (sinusoidal), thermal mass and conductance parameters.
-`RoomState.HeatInput` is the same interface — `PhysicsCalculator` consumes it
-differently. No changes to `RoomState` or the actuator command goroutines.
+`HeatInput()` returns a snapshot safe to read without holding `Mu`. The publish
+loop snapshots `HeatInput()` before acquiring `Mu.Lock` for the advance call —
+this avoids deadlock since `HeatInput()` acquires `Mu.RLock` internally.
 
 ### Room template config
 
 ```yaml
-room_templates:
-  - id: reactive-room
-    model:
-      type: reactive
-      base_temp: 20.0
-      base_humidity: 50.0
-      passive_rate:
-        temperature: 0.1    # degrees per second back toward ambient
-        humidity: 0.3       # percent per second back toward ambient
+- id: standard-room
+  measurements:
+    temperature:
+      base: 20.0
+      noise: 0.5
+    humidity:
+      base: 50.0
+      noise: 0.5
+
+- id: standard-room-high
+  measurements:
+    temperature:
+      base: 20.0
+      noise: 0.2
+      conductance_scale: 2.67   # 400/150 — drafty room loses heat faster
+    humidity:
+      base: 50.0
+      noise: 0.8
+      conductance_scale: 2.5    # 0.005/0.002
 ```
+
+`thermal_mass_scale` and `conductance_scale` default to 1.0 if absent. Simulation
+file room entries can override template scales — simulation value wins if present,
+otherwise template value is used.
 
 ---
 
 ## Actuator command subscriptions
 
-Each actuator device runs a goroutine that subscribes to its command topic
-on startup. The goroutine updates `RoomState.HeatInput` when commands arrive.
+Each actuator device runs a goroutine that subscribes to its command topic at
+startup. Multiple actuator goroutines for the same device share one topic — each
+filters for its own measurement type.
 
 Command topic: `devices/{hw_id}/cmd` — QoS 2.
 
-On `on` command (and previously `off`): add device's `rates` to `HeatInput`.
-On `off` command (and previously `on`): subtract device's `rates` from `HeatInput`.
-Same command repeated: no-op — idempotent. This matters because device-service
-re-sends commands every tick as a heartbeat.
-
-Rate accumulation is additive across multiple devices of the same actuator type
-in the same room. Two heaters each with `temperature rate: 0.5` produce
-`HeatInput["temperature"] = 1.0` when both are on. Physically correct —
-two heaters heat a room faster than one.
-
-### Device template config
-
-```yaml
-device_templates:
-  - id: climate-controller
-    sensors: [temperature, humidity]
-    actuators:
-      - type: heater
-        rates:
-          temperature: 0.5    # degrees per second when commanded on
-      - type: humidifier
-        rates:
-          humidity: 1.0       # percent per second when commanded on
-    noise:
-      temperature: 0.1        # Gaussian noise std dev applied at publish time
-      humidity: 0.5
-    offset:
-      temperature: 0.0        # sensor measurement offset
-      humidity: 0.0
+Command payload:
+```json
+{"actuator_type": "heater", "state": true}
 ```
 
-Rates are per-second. The tick calculation multiplies by `tick_interval_seconds`
-so rate values are independent of tick frequency.
+`actuator_type` uses API-facing names. Translated to measurement types via
+`config.ActuatorNameToMeasurement` at command receipt. Each goroutine ignores
+commands not matching its measurement type.
+
+On `state: true`: `SetContribution(hwID/type, {type: rate})`.
+On `state: false`: `ClearContribution(hwID/type)`.
+
+Device-service re-sends commands every tick as a heartbeat. The idempotent
+contribution model means repeated identical commands have no effect.
+
+### Watchdog
+
+Each actuator goroutine runs a watchdog ticker. If no matching command arrives
+within `watchdogTimeout`, the contribution is cleared — device-service is treated
+as absent. This prevents actuators remaining on indefinitely if device-service
+stops.
+
+```
+watchdogTimeout = baseTickSeconds * watchdogMultiplier
+```
+
+`baseTickSeconds` = `CONTROL_TICK_INTERVAL_SECONDS` — device-service's real
+wall-clock tick rate. `watchdogMultiplier` = 3 (hardcoded constant). The timeout
+is real wall-clock time, independent of `time_scale`.
+
+---
+
+## Time scaling
+
+The simulator supports accelerated simulation via `time_scale` in the simulation
+YAML. All timing is derived from this single user-facing parameter.
+
+```
+naturalInterval          = baseTickSeconds / timeScale
+effectivePublishInterval = max(naturalInterval, minPublishIntervalMS)
+simulatedTickSeconds     = timeScale * effectivePublishInterval.Seconds()
+```
+
+`baseTickSeconds` = `CONTROL_TICK_INTERVAL_SECONDS` (shared with device-service).
+`minPublishIntervalMS` defaults to 500ms — overridable in simulation YAML via
+`min_publish_interval_ms`. `maxTimeScale` = 400 — hard cap enforced at load time.
+
+The floor crossover occurs at `timeScale = baseTickSeconds / minPublishInterval`.
+With default values (`baseTickSeconds=10`, `minPublishIntervalMS=500ms`): crossover
+at `timeScale=20`. Below the crossover, `simulatedTickSeconds` always equals
+`baseTickSeconds` — acceleration comes from more frequent ticks. Above the
+crossover, ticks are capped at the floor rate and `simulatedTickSeconds` grows
+to compensate.
+
+All timing values are computed once in `config.Load()` and stored on `Config` —
+`simulator.go` reads `cfg.EffectivePublishInterval` and `cfg.SimulatedTickSeconds`
+directly.
+
+---
+
+## Goroutine structure
+
+One goroutine per concern — split by responsibility:
+
+**Sensor goroutine** (one per device with sensors):
+- Waits for stagger offset
+- Ticks at `effectivePublishInterval`
+- Calls `advanceRoom` each tick (snapshots `HeatInput`, acquires `Mu.Lock`,
+  calls `model.Advance`, applies deltas, clamps bounds)
+- Calls `publishTelemetry` (acquires `Mu.RLock`, reads `Current`, applies
+  sensor noise and offset, publishes)
+
+**Actuator goroutine** (one per actuator per device):
+- Subscribes to `devices/{hw_id}/cmd` at startup
+- Filters commands by measurement type
+- Updates contributions via `SetContribution` / `ClearContribution`
+- Runs watchdog ticker, clears contribution on timeout
+
+Devices with no sensors (actuator-only) get only actuator goroutines.
+Devices with no actuators (sensor-only) get only a sensor goroutine.
 
 ---
 
 ## Publish loop
 
-One goroutine per device. Staggered start offset: `tickInterval * deviceIndex / totalDevices`.
+Sensor goroutines staggered by:
+```
+staggerOffset = effectivePublishInterval * deviceIndex / totalDevices
+```
 
-On each tick:
-1. Acquire `RoomState.mu` read lock
-2. Read `Current` values for each sensor type the device reports
-3. Release lock
-4. Apply per-device Gaussian noise and offset to each value
-5. Publish `TelemetryMessage` to `devices/{hw_id}/telemetry` — QoS 1
+Published value per sensor:
+```
+value = Current[type] + N(0, sensor.Noise) + sensor.Offset
+```
 
-Published value = `RoomState.Current[type] + noise + offset`.
+Sensor noise is applied at publish time, independent of room model. It represents
+measurement error of the physical sensor, not environmental variation.
 
 ---
 
 ## Schedule provisioning (Phase 4c)
 
-Schedule definitions live in the simulation YAML alongside room definitions.
-At bootstrap, after rooms and devices are provisioned:
-
-1. For each room, create a schedule with the defined periods.
-2. Activate the schedule via `PATCH /schedules/:id/activate`.
-
-Example simulation YAML extension:
-```yaml
-rooms:
-  - template: reactive-room
-    name_prefix: living-room
-    schedule:
-      name: "Weekday Comfort"
-      periods:
-        - days: [1,2,3,4,5]
-          start_time: "07:00"
-          end_time: "22:00"
-          mode: AUTO
-          target_temp: 21.0
-          target_hum: 50.0
-```
+Schedule definitions will live in the simulation YAML alongside room definitions.
+At bootstrap, after rooms and devices are provisioned, schedules are created and
+activated per room. Two additional users will be added to `demo.yaml` — one
+schedule-driven, one on indefinite manual override.
 
 ---
 
@@ -250,17 +325,15 @@ rooms:
 `--mode=teardown` deletes all resources provisioned for a simulation in strict
 dependency order:
 
-1. Deactivate active schedules (PATCH deactivate)
+1. Deactivate active schedules
 2. Delete schedule periods
 3. Delete schedules
-4. Unassign devices from rooms (PUT with null room_id)
+4. Unassign devices from rooms
 5. Delete devices
 6. Delete rooms
 7. Delete user (`DELETE /users/me`)
 
-Teardown is idempotent — 404 responses are treated as success (already deleted).
-Uses the same deterministic identity generation as provisioning to know which
-resources to target.
+Teardown is idempotent — 404 responses are treated as success.
 
 ---
 
