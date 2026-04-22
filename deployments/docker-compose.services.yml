@@ -30,6 +30,10 @@ services:
         condition: service_healthy
       timescaledb:
         condition: service_healthy
+      migrate-appdb:
+        condition: service_completed_successfully
+      migrate-metricsdb:
+        condition: service_completed_successfully
 
   device-service:
     build:
@@ -49,6 +53,12 @@ services:
       - DEVICE_DEBUG=${DEVICE_DEBUG:-}
       - DEVICE_TRACE_INGESTION=${DEVICE_TRACE_INGESTION:-false}
       - DEVICE_TRACE_TICK=${DEVICE_TRACE_TICK:-false}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8081/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
     depends_on:
       postgres:
         condition: service_healthy
@@ -58,8 +68,13 @@ services:
         condition: service_healthy
       mosquitto:
         condition: service_healthy
+      migrate-appdb:
+        condition: service_completed_successfully
+      migrate-metricsdb:
+        condition: service_completed_successfully
 
   simulator-service:
+    profiles: ["simulation"]
     command: ["./bin/simulator-service", "--simulation=${SIMULATOR_SIMULATION:-default}"]
     build:
       context: .

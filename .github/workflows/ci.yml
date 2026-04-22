@@ -1,0 +1,98 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-and-vet:
+    name: Build and vet
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.work
+          cache: false
+
+      - name: Build all services
+        run: |
+          go build github.com/DiegoJohnson25/climate-control/api-service/...
+          go build github.com/DiegoJohnson25/climate-control/device-service/...
+          go build github.com/DiegoJohnson25/climate-control/simulator-service/...
+
+      - name: Vet all services
+        run: |
+          go vet github.com/DiegoJohnson25/climate-control/api-service/...
+          go vet github.com/DiegoJohnson25/climate-control/device-service/...
+          go vet github.com/DiegoJohnson25/climate-control/simulator-service/...
+
+  stack-startup:
+    name: Stack startup
+    runs-on: ubuntu-latest
+    needs: build-and-vet
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Copy CI env file
+        run: cp .env.ci .env
+
+      - name: Generate Mosquitto password file
+        run: |
+          set -a && source .env && set +a
+          docker run --rm eclipse-mosquitto:2 sh -c " \
+            mosquitto_passwd -c -b /tmp/passwd ${MQTT_DEVICE_USERNAME} ${MQTT_DEVICE_PASSWORD} && \
+            mosquitto_passwd -b /tmp/passwd ${MQTT_DEVICE_SERVICE_USERNAME} ${MQTT_DEVICE_SERVICE_PASSWORD} && \
+            mosquitto_passwd -b /tmp/passwd healthcheck healthcheck && \
+            cat /tmp/passwd" | grep -v "^Adding" > deployments/mosquitto/passwd
+
+      - name: Start stack
+        run: |
+          docker compose -f docker-compose.yml -f deployments/docker-compose.services.yml up -d
+
+      - name: Wait for services to become healthy
+        run: |
+          SERVICES="postgres timescaledb redis mosquitto api-service device-service"
+          TIMEOUT=40
+          ELAPSED=0
+          until [ $ELAPSED -ge $TIMEOUT ]; do
+            ALL_HEALTHY=true
+            for svc in $SERVICES; do
+              STATUS=$(docker compose -f docker-compose.yml -f deployments/docker-compose.services.yml \
+                ps --format "{{.Health}}" $svc 2>/dev/null)
+              if [ "$STATUS" != "healthy" ]; then
+                ALL_HEALTHY=false
+                break
+              fi
+            done
+            if [ "$ALL_HEALTHY" = "true" ]; then
+              echo "All services healthy"
+              exit 0
+            fi
+            sleep 5
+            ELAPSED=$((ELAPSED + 5))
+          done
+          echo "Timeout waiting for services to become healthy"
+          docker compose -f docker-compose.yml -f deployments/docker-compose.services.yml logs
+          exit 1
+
+      - name: Verify no containers have exited unexpectedly
+        run: |
+          EXITED=$(docker compose -f docker-compose.yml -f deployments/docker-compose.services.yml \
+            ps --status exited --format "{{.Name}}" \
+            | grep -v -E 'migrate-appdb|migrate-metricsdb' || true)
+          if [ -n "$EXITED" ]; then
+            echo "Unexpected exited containers: $EXITED"
+            docker compose -f docker-compose.yml -f deployments/docker-compose.services.yml logs
+            exit 1
+          fi
+          echo "No unexpected exited containers"
+
+      - name: Tear down
+        if: always()
+        run: |
+          docker compose -f docker-compose.yml -f deployments/docker-compose.services.yml --profile simulation down -v
