@@ -83,14 +83,14 @@ jobs:
       - name: Verify no containers have exited unexpectedly
         run: |
           EXITED=$(docker compose -f docker-compose.yml -f deployments/docker-compose.services.yml \
-            ps --status exited --format json \
-            | jq -r '.[].Name' \
+            ps --status exited --format "{{.Name}}" \
             | grep -v -E 'migrate-appdb|migrate-metricsdb')
           if [ -n "$EXITED" ]; then
             echo "Unexpected exited containers: $EXITED"
             docker compose -f docker-compose.yml -f deployments/docker-compose.services.yml logs
             exit 1
           fi
+          echo "No unexpected exited containers"
 
       - name: Tear down
         if: always()
