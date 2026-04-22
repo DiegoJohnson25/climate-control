@@ -23,7 +23,7 @@ jobs:
           go build github.com/DiegoJohnson25/climate-control/api-service/...
           go build github.com/DiegoJohnson25/climate-control/device-service/...
           go build github.com/DiegoJohnson25/climate-control/simulator-service/...
-      
+
       - name: Vet all services
         run: |
           go vet github.com/DiegoJohnson25/climate-control/api-service/...
@@ -53,7 +53,7 @@ jobs:
       - name: Start stack
         run: |
           docker compose -f docker-compose.yml -f deployments/docker-compose.services.yml up -d
-      
+
       - name: Wait for services to become healthy
         run: |
           SERVICES="postgres timescaledb redis mosquitto api-service device-service"
@@ -95,4 +95,4 @@ jobs:
       - name: Tear down
         if: always()
         run: |
-          docker compose -f docker-compose.yml -f deployments/docker-compose.services.yml down -v
+          docker compose -f docker-compose.yml -f deployments/docker-compose.services.yml --profile simulation down -v
