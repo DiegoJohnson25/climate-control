@@ -84,7 +84,7 @@ jobs:
         run: |
           EXITED=$(docker compose -f docker-compose.yml -f deployments/docker-compose.services.yml \
             ps --status exited --format "{{.Name}}" \
-            | grep -v -E 'migrate-appdb|migrate-metricsdb')
+            | grep -v -E 'migrate-appdb|migrate-metricsdb' || true)
           if [ -n "$EXITED" ]; then
             echo "Unexpected exited containers: $EXITED"
             docker compose -f docker-compose.yml -f deployments/docker-compose.services.yml logs
