@@ -25,7 +25,7 @@ rebuild:
 
 demo:
 	$(MAKE) up
-	$(MAKE) simulator-start SIM=default
+	$(MAKE) simulator-start SIM=demo
 
 # ── Infrastructure ────────────────────────────────────────────────────────────
 

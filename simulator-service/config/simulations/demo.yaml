@@ -1,0 +1,116 @@
+# simulator-service/config/simulations/demo.yaml
+#
+# Realistic multi-user simulation intended for demonstration and historical
+# data generation. All rooms are reactive and noisy.
+#
+# Two users are defined now — single-sensor and multi-sensor variants.
+# Two additional users (schedule-driven and manual-override) will be added
+# in Phase 4c once schedule provisioning and teardown are implemented.
+#
+# All user groups are interactive — credentials written to
+# /app/config/credentials/demo.txt. Any user can be logged into via the
+# client to view live readings and historical data.
+#
+# User layout:
+#   user-000 — one sensor per type per room
+#   user-001 — multiple sensors per type per room (exercises aggregation)
+simulation:
+  time_scale: 10
+  user_groups:
+    # user-000: single sensor per type per room
+    - count: 1
+      interactive: true
+      rooms:
+        - template: standard-room
+          name_prefix: living-room
+          type: reactive
+          noisy: true
+          count: 1
+          devices:
+            - template: climate-sensor
+              name_prefix: climate-sensor
+              count: 1
+            - template: heater
+              name_prefix: heater
+              count: 1
+            - template: humidifier
+              name_prefix: humidifier
+              count: 1
+
+        - template: warm-room
+          name_prefix: bedroom
+          type: reactive
+          noisy: true
+          count: 1
+          devices:
+            - template: temp-sensor
+              name_prefix: temp-sensor
+              count: 1
+            - template: heater
+              name_prefix: heater
+              count: 1
+
+        - template: cold-room
+          name_prefix: basement
+          type: reactive
+          noisy: true
+          count: 1
+          devices:
+            - template: climate-sensor
+              name_prefix: climate-sensor
+              count: 1
+            - template: heater
+              name_prefix: heater
+              count: 1
+            - template: humidifier
+              name_prefix: humidifier
+              count: 1
+
+    # user-001: multiple sensors per type per room (exercises sensor aggregation)
+    - count: 1
+      interactive: true
+      rooms:
+        - template: standard-room
+          name_prefix: living-room
+          type: reactive
+          noisy: true
+          count: 1
+          devices:
+            - template: climate-sensor
+              name_prefix: climate-sensor
+              count: 2
+            - template: heater
+              name_prefix: heater
+              count: 1
+            - template: humidifier
+              name_prefix: humidifier
+              count: 1
+
+        - template: warm-room
+          name_prefix: bedroom
+          type: reactive
+          noisy: true
+          count: 1
+          devices:
+            - template: temp-sensor
+              name_prefix: temp-sensor
+              count: 2
+            - template: heater
+              name_prefix: heater
+              count: 1
+
+        - template: cold-room
+          name_prefix: basement
+          type: reactive
+          noisy: true
+          count: 1
+          devices:
+            - template: climate-sensor
+              name_prefix: climate-sensor
+              count: 2
+            - template: heater
+              name_prefix: heater
+              count: 1
+            - template: humidifier
+              name_prefix: humidifier
+              count: 1

@@ -18,6 +18,11 @@ import (
 // will never trigger for this value within any reasonable system lifetime.
 var indefiniteOverride = time.Date(9999, 12, 31, 23, 59, 59, 0, time.UTC)
 
+const (
+	defaultTempDeadband = 0.5
+	defaultHumDeadband  = 2.0
+)
+
 type Service struct {
 	rooms *Repository
 	rdb   *redis.Client
@@ -37,8 +42,10 @@ func (s *Service) GetByID(ctx context.Context, id, userID uuid.UUID) (*models.Ro
 
 func (s *Service) Create(ctx context.Context, userID uuid.UUID, name string) (*models.Room, error) {
 	rm := models.Room{
-		UserID: userID,
-		Name:   name,
+		UserID:       userID,
+		Name:         name,
+		DeadbandTemp: defaultTempDeadband,
+		DeadbandHum:  defaultHumDeadband,
 	}
 	if err := s.rooms.CreateWithDesiredState(ctx, &rm); err != nil {
 		return nil, err
