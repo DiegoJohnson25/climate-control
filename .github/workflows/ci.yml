@@ -30,12 +30,6 @@ jobs:
           go vet github.com/DiegoJohnson25/climate-control/device-service/...
           go vet github.com/DiegoJohnson25/climate-control/simulator-service/...
 
-      - name: Copy CI env file
-        run: cp .env.ci .env
-
-      - name: Build Docker images
-        run: docker compose -f docker-compose.yml -f deployments/docker-compose.services.yml build
-
   stack-startup:
     name: Stack startup
     runs-on: ubuntu-latest
@@ -69,7 +63,7 @@ jobs:
             ALL_HEALTHY=true
             for svc in $SERVICES; do
               STATUS=$(docker compose -f docker-compose.yml -f deployments/docker-compose.services.yml \
-                ps --format json $svc 2>/dev/null | jq -r '.[0].Health // empty')
+                ps --format "{{.Health}}" $svc 2>/dev/null)
               if [ "$STATUS" != "healthy" ]; then
                 ALL_HEALTHY=false
                 break
