@@ -18,6 +18,7 @@
 
 # Personal reference docs
 /notes/
+/queries/
 
 # Simulator Credential files
 simulator-service/config/credentials/*

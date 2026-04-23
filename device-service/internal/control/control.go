@@ -185,10 +185,17 @@ func Evaluate(rc *cache.RoomCache, now time.Time, staleThreshold time.Duration) 
 		entry.ReadingCountHum = &n
 	}
 
-	// populate target fields from effective state for log context
+	// populate target and deadband fields from effective state for log context;
+	// deadbands are null when no target is set — they are only meaningful as a pair
 	if es.targets != nil {
 		entry.TargetTemp = es.targets["temperature"]
 		entry.TargetHum = es.targets["humidity"]
+		if entry.TargetTemp != nil {
+			entry.DeadbandTemp = &rc.DeadbandTemp
+		}
+		if entry.TargetHum != nil {
+			entry.DeadbandHum = &rc.DeadbandHum
+		}
 	}
 
 	var commands []ActuatorCommand
