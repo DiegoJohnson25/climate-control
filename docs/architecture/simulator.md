@@ -1,50 +1,141 @@
 # Simulator Service — Architecture Reference
 
-Provisions simulated users, rooms, devices, and schedules via the api-service
-REST API. Publishes sensor telemetry via MQTT. Subscribes to actuator command
-topics and feeds commands back into room state models, so the published readings
-react to device-service control decisions. Fully replaces physical ESP32 hardware
-for development and demonstration.
+Provisions simulated users, rooms, devices, desired states, and schedules via
+the api-service REST API. Publishes sensor telemetry via MQTT. Subscribes to
+actuator command topics and feeds commands back into room state models, so
+published readings react to device-service control decisions. Fully replaces
+physical ESP32 hardware for development and demonstration.
+
+---
+
+## Usage
+
+### Starting a simulation
+
+The simulator-service has `profiles: ["simulation"]` in docker-compose and is
+excluded from the normal `docker compose up`. Use dedicated make targets:
+
+```bash
+# Start the full stack and run the default simulation
+make demo
+
+# Start a named simulation (stack must already be up)
+make simulator-start SIM=default
+make simulator-start SIM=demo
+make simulator-start SIM=cache-test
+```
+
+`docker compose run` is used internally by make targets — it allows a
+per-invocation `--simulation` flag and is the correct tool for one-shot runs.
+`docker compose up` is not used for the simulator.
+
+### Teardown
+
+```bash
+make simulator-teardown SIM=default
+make simulator-teardown SIM=demo
+```
+
+Teardown deletes all resources provisioned for the simulation by deleting each
+simulated user via `DELETE /users/me`. All rooms, devices, and schedules cascade
+via database foreign key constraints. No ordering required — a single API call
+per user is all that is needed.
+
+Device-service caches for deleted rooms become stale after teardown. They are
+corrected automatically on the next provisioning run via Redis stream
+invalidation when the rooms are recreated.
+
+### Re-running provisioning
+
+Provisioning is fully idempotent. Running `make simulator-start` against an
+already-provisioned simulation is safe — all create calls are guarded by 409
+handling with name/hw_id lookups. Desired state is always PUT (full replacement).
+Schedule periods on 409 are skipped (overlap = already provisioned).
+
+### Credentials file
+
+Interactive user groups write credentials to
+`/app/config/credentials/{sim-name}.txt` at the end of provisioning. This file
+contains email/password for each simulated user and a summary of their rooms and
+devices. Mount or `docker cp` to retrieve it for manual login via the client.
 
 ---
 
 ## Config system
 
-Two-file separation: templates define reusable room and device types; simulation
-files compose them into a concrete topology.
+Two-level separation: template files define reusable types; simulation files
+compose them into a concrete topology.
 
 ### Template files
 
-`config/templates/rooms.yaml` — room environment templates. Each defines ambient
-base values, noise characteristics, and optional scale overrides for thermal mass
-and conductance. Physical base constants are defined once in
-`internal/config/config.go` — templates only carry scale multipliers.
+Located in `config/templates/`. Four files:
 
-`config/templates/devices.yaml` — device templates. Each defines sensors,
-actuators, and their characteristics. Actuator entries carry `rate_scale` — a
-multiplier against the base rate constant for that measurement type.
+**`rooms.yaml`** — room environment templates. Each defines ambient base values,
+noise characteristics, and optional scale overrides for thermal mass and
+conductance. Physical base constants are defined once in
+`internal/config/config.go` — templates carry only scale multipliers.
+
+**`devices.yaml`** — device templates. Each defines sensors and actuators.
+Actuator entries carry `rate_scale` — a multiplier against the base rate constant
+for that measurement type.
+
+**`desired_states.yaml`** — desired state templates. Each defines `target_temp`
+and/or `target_hum`. Mode is always AUTO and `manual_override_until` is always
+`"indefinite"` — neither is configurable. At least one target required.
+
+**`schedules.yaml`** — schedule templates. Each defines a name and a list of
+periods. Period name is omitted (optional in API, no functional value here).
+`days_of_week` uses 1=Monday, 7=Sunday. AUTO periods require at least one target.
 
 Template references are dissolved into flat concrete structs at load time. The
-runtime simulator never references the template system — it works entirely with
-resolved structs.
+runtime simulator and provisioning code never reference the template system —
+they work entirely with resolved structs.
 
 ### Simulation files
 
 Located in `config/simulations/`. Selected via `--simulation=name` CLI flag.
 No default — must be explicit on every invocation.
 
-Each simulation file references room and device templates by ID and defines the
-topology: how many users, rooms per user, devices per room. Room entries carry
-`type` and `noisy` behavioural flags, and optional scale overrides that take
-precedence over template scales.
+Each simulation file composes templates into a topology via user groups and room
+entries. Room entries carry behavioural flags (`type`, `noisy`), optional
+physical scale overrides, an optional `desired_state` template reference, and an
+optional `schedule` template reference.
+
+**Inline desired state overrides:** `target_temp` and `target_hum` on a room
+entry override the template values per field when present. No template ref is
+required — inline values alone are sufficient.
+
+**Mutual exclusion:** a room entry with both `desired_state` and `schedule` set
+is a load-time error. These are mutually exclusive control mechanisms.
+
+**Schedule content is not overridable inline** — create a new template for
+different period values.
+
+**Simulation file template overrides:** room and device template definitions
+in a simulation file's `template_overrides` block replace the shared template
+for that simulation. Desired state and schedule templates cannot be overridden
+inline — create a new template file entry.
 
 ### Available simulations
 
 | File | Description |
 |---|---|
-| `default.yaml` | Single user, standard room, separate sensor + actuator devices, `time_scale: 120` |
-| `cache-test.yaml` | 5 rooms covering all capability combinations — used for cache warm verification, `time_scale: 1.0` |
-| `demo.yaml` | 2 users (single-sensor and multi-sensor variants), 3 rooms each, `time_scale: 120` |
+| `default.yaml` | Single user, standard room, full climate device set, comfort desired state. `time_scale: 60`, `min_publish_interval_ms: 2000`. Primary simulation for development. |
+| `cache-test.yaml` | 5 rooms covering all capability combinations. `time_scale: 1.0`. No desired state or schedules — telemetry-only, used for cache warm verification. |
+| `demo.yaml` | 4 users across a 2x2 matrix (device config × control mechanism), 3 rooms each. `time_scale: 10`. |
+
+### demo.yaml user matrix
+
+| User | Device config | Control mechanism |
+|---|---|---|
+| user-000 | single sensor per type | desired state (indefinite override) |
+| user-001 | multiple sensors per type | desired state (indefinite override) |
+| user-002 | single sensor per type | schedules |
+| user-003 | multiple sensors per type | schedules |
+
+user-000 and user-002 share the same room/device topology. user-001 and user-003
+share the same topology (exercises sensor aggregation). The pairing makes the
+2x2 explicit: same hardware, different control mechanism.
 
 ### Available device templates
 
@@ -56,7 +147,7 @@ precedence over template scales.
 ## Identity generation
 
 Deterministic — same simulation name always produces the same identities.
-This makes provisioning idempotent across hard resets.
+This makes provisioning idempotent across hard resets and teardown/re-run cycles.
 
 ```
 email:  sim-{simulation_name}-user-{000}@{domain}
@@ -70,24 +161,39 @@ for uniqueness across a user's device namespace.
 
 ## Provisioning sequence
 
-1. For each user in the simulation:
-   - Attempt login. If 401, register then login.
-   - Store JWT for subsequent API calls.
-2. Fetch existing rooms and devices via `GET /rooms` and `GET /devices`.
-   Build lookup maps keyed by name for idempotent upsert logic.
-3. For each room in topology: create if not exists (409 → lookup and use existing).
-4. For each device in topology: create if not exists, assign to room.
-5. (Phase 4c) For each room: create schedule with periods from simulation YAML,
-   activate it.
-6. Write credentials file to `/app/config/credentials/{sim-name}.txt` for
-   simulations with interactive groups.
+Per user in the simulation:
+
+1. Attempt login. If 401, register then login. Store JWT for all subsequent calls.
+2. Fetch existing rooms (`GET /rooms`) and devices (`GET /devices`). Build lookup
+   maps keyed by name (rooms) and hw_id (devices) for idempotent upsert logic.
+3. For each room: `POST /rooms` — 409 → lookup by name and use existing ID.
+4. For each device: `POST /devices` — 409 → lookup by hw_id and use existing ID.
+   `PUT /devices/:id` to assign to room (always called, idempotent).
+5. For each room with `desired_state`: `PUT /rooms/:id/desired-state`.
+   Always PUT — full replacement, no conflict handling needed.
+6. For each room with `schedule`:
+   - `POST /rooms/:id/schedules` — 409 → `GET /rooms/:id/schedules`, find by name
+   - `POST /schedules/:id/periods` for each period — 409 → skip (overlap = already provisioned)
+   - `PATCH /schedules/:id/activate` — 409 (already active) → skip;
+     409 (capability conflict) → **fatal error**
+
+Steps 5 and 6 run after all devices are assigned — activation capability check
+requires devices to be present.
 
 All provisioning uses the api-service REST API — no direct DB access.
 
-Actuator types in YAML use measurement type names (`temperature`, `humidity`).
-These are translated to API-facing names (`heater`, `humidifier`) at provisioning
-time via `config.MeasurementToActuatorName`. The simulator's internal model uses
-measurement types exclusively.
+### Capability conflict on activation
+
+A capability conflict means the room's assigned devices cannot satisfy the
+schedule's period requirements (e.g. a period with `target_hum` but no humidity
+sensor/humidifier assigned). This is a fatal provisioning error — it indicates a
+misconfigured simulation file. The schedule template must match the room's device
+capabilities.
+
+**Common case:** rooms with only a temp sensor and heater (e.g. the `warm-room`
+template with only `temp-sensor` and `heater` devices) cannot use schedule
+templates that include `target_hum`. Use a temp-only schedule template for these
+rooms.
 
 ---
 
@@ -120,9 +226,9 @@ room entry, not the template:
 - `physics` (Phase 9) — full thermal model with external temperature profile.
 
 **`noisy`** (default: `false`) — stochastic axis:
-- `false` — all room-level and actuator noise fields zeroed at config load time.
-  Model and room advance are deterministic. Sensor noise is unaffected — it is a
-  hardware characteristic independent of this flag.
+- `false` — all room-level noise fields zeroed at config load time. Model and
+  room advance are deterministic. Sensor noise is unaffected — it is a hardware
+  characteristic independent of this flag.
 - `true` — room-level noise applied as a perturbation to effective ambient each tick.
 
 Both axes are independent. A static noisy room wanders around ambient without
@@ -144,7 +250,7 @@ delta[type]      = (energyInput - passiveLoss) / thermalMass[type]
 For static rooms, `heatInput` is always zero — `Current` tracks effective ambient
 via the passive loss term only. For noisy rooms, `roomNoise` is nonzero and
 `effectiveAmbient` wanders each tick. For non-noisy rooms, `roomNoise` was zeroed
-at config load — the equation is unchanged, the noise term just evaluates to zero.
+at config load — the noise term evaluates to zero.
 
 `PhysicsModel` (Phase 9) implements the same `RoomModel` interface with its own
 internal parameters.
@@ -163,11 +269,11 @@ type RoomState struct {
 }
 ```
 
-`contributions` is keyed by `hwID/measurementType` — a device with both temperature
-and humidity actuators has two independent contribution entries. `heatInput` is
-always derived from `contributions` via `recomputeHeatInput` — never mutated
-directly. This eliminates floating-point drift and makes idempotent commands
-(same command repeated) a no-op by design.
+`contributions` is keyed by `hwID/measurementType` — a device with both
+temperature and humidity actuators has two independent contribution entries.
+`heatInput` is always derived from `contributions` via `recomputeHeatInput` —
+never mutated directly. This eliminates floating-point drift and makes idempotent
+commands (same command repeated) a no-op by design.
 
 `HeatInput()` returns a snapshot safe to read without holding `Mu`. The publish
 loop snapshots `HeatInput()` before acquiring `Mu.Lock` for the advance call —
@@ -190,11 +296,11 @@ this avoids deadlock since `HeatInput()` acquires `Mu.RLock` internally.
     temperature:
       base: 20.0
       noise: 0.2
-      conductance_scale: 2.67   # 400/150 — drafty room loses heat faster
+      conductance_scale: 2.67   # drafty room loses heat faster
     humidity:
       base: 50.0
       noise: 0.8
-      conductance_scale: 2.5    # 0.005/0.002
+      conductance_scale: 2.5
 ```
 
 `thermal_mass_scale` and `conductance_scale` default to 1.0 if absent. Simulation
@@ -261,13 +367,24 @@ simulatedTickSeconds     = timeScale * effectivePublishInterval.Seconds()
 The floor crossover occurs at `timeScale = baseTickSeconds / minPublishInterval`.
 With default values (`baseTickSeconds=10`, `minPublishIntervalMS=500ms`): crossover
 at `timeScale=20`. Below the crossover, `simulatedTickSeconds` always equals
-`baseTickSeconds` — acceleration comes from more frequent ticks. Above the
-crossover, ticks are capped at the floor rate and `simulatedTickSeconds` grows
-to compensate.
+`baseTickSeconds`. Above the crossover, ticks are capped at the floor rate and
+`simulatedTickSeconds` grows to compensate.
 
 All timing values are computed once in `config.Load()` and stored on `Config` —
 `simulator.go` reads `cfg.EffectivePublishInterval` and `cfg.SimulatedTickSeconds`
 directly.
+
+### Write volume considerations
+
+High `time_scale` combined with a low `min_publish_interval_ms` generates a large
+number of TimescaleDB rows quickly. As a reference: `demo.yaml` at `time_scale: 10`
+with default 500ms floor generates roughly 1–1.5 GB/day of raw sensor readings.
+`default.yaml` at `time_scale: 60` and `min_publish_interval_ms: 2000` is
+appropriate for sustained local development — approximately 50–100 MB/day.
+
+A TimescaleDB retention policy and continuous aggregates are planned for Phase 8.
+Until then, use `make simulator-teardown` and `docker compose down -v` to reset
+data between extended demo runs.
 
 ---
 
@@ -308,46 +425,6 @@ value = Current[type] + N(0, sensor.Noise) + sensor.Offset
 
 Sensor noise is applied at publish time, independent of room model. It represents
 measurement error of the physical sensor, not environmental variation.
-
----
-
-## Schedule provisioning (Phase 4c)
-
-Schedule definitions will live in the simulation YAML alongside room definitions.
-At bootstrap, after rooms and devices are provisioned, schedules are created and
-activated per room. Two additional users will be added to `demo.yaml` — one
-schedule-driven, one on indefinite manual override.
-
----
-
-## Teardown (Phase 4c)
-
-`--mode=teardown` deletes all resources provisioned for a simulation in strict
-dependency order:
-
-1. Deactivate active schedules
-2. Delete schedule periods
-3. Delete schedules
-4. Unassign devices from rooms
-5. Delete devices
-6. Delete rooms
-7. Delete user (`DELETE /users/me`)
-
-Teardown is idempotent — 404 responses are treated as success.
-
----
-
-## Invocation
-
-```bash
-# Run a simulation
-docker compose run -d simulator-service --simulation=default
-
-# Teardown a simulation
-docker compose run simulator-service --simulation=default --mode=teardown
-```
-
-`docker compose run` (not `up`) allows per-invocation `--simulation` flag.
 
 ---
 
