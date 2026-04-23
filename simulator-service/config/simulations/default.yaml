@@ -1,12 +1,13 @@
 simulation:
-  tick_interval_seconds: 5
-
+  time_scale: 120
   user_groups:
     - count: 1
       interactive: true
       rooms:
         - template: standard-room
-          name_prefix: standard-room
+          name_prefix: living-room
+          type: reactive
+          noisy: true
           count: 1
           devices:
             - template: climate-sensor

@@ -20,11 +20,15 @@ import (
 // Provisioned types
 // ---------------------------------------------------------------------------
 
+// ProvisionedDevice holds the resolved identity and config for a single
+// simulated device after provisioning.
 type ProvisionedDevice struct {
 	HwID   string
 	Config config.Device
 }
 
+// ProvisionedRoom holds the resolved identity and config for a single
+// simulated room after provisioning.
 type ProvisionedRoom struct {
 	ID      string
 	Name    string
@@ -32,6 +36,7 @@ type ProvisionedRoom struct {
 	Devices []ProvisionedDevice
 }
 
+// ProvisionedUser holds the provisioned rooms for a single simulated user.
 type ProvisionedUser struct {
 	Rooms []ProvisionedRoom
 }
@@ -165,7 +170,13 @@ func provisionDevices(client *api.Client, token, simName string, userIdx, roomId
 			deviceName := fmt.Sprintf("%s-%s-%d", roomName, def.NamePrefix, i)
 			hwID := generateHwID(simName, userIdx, roomIdx, globalDeviceIdx)
 
-			deviceID, err := client.CreateDevice(token, deviceName, hwID, def.Sensors, def.Actuators)
+			sensorTypes := sensorTypeStrings(def.Sensors)
+			actuatorTypes, err := actuatorTypeStrings(def.Actuators)
+			if err != nil {
+				return nil, fmt.Errorf("device %s: %w", deviceName, err)
+			}
+
+			deviceID, err := client.CreateDevice(token, deviceName, hwID, sensorTypes, actuatorTypes)
 			if err != nil {
 				if err != api.ErrConflict {
 					return nil, fmt.Errorf("create device %s: %w", deviceName, err)
@@ -214,6 +225,33 @@ func emailDomain(emailTemplate string) string {
 }
 
 // ---------------------------------------------------------------------------
+// Type string helpers
+// ---------------------------------------------------------------------------
+
+func sensorTypeStrings(sensors []config.SensorConfig) []string {
+	types := make([]string, len(sensors))
+	for i, s := range sensors {
+		types[i] = s.Type
+	}
+	return types
+}
+
+// actuatorTypeStrings translates internal measurement-type actuator configs to
+// the named actuator types the api-service expects. Returns an error if a
+// measurement type has no known actuator name mapping.
+func actuatorTypeStrings(actuators []config.ActuatorConfig) ([]string, error) {
+	types := make([]string, len(actuators))
+	for i, a := range actuators {
+		name, ok := config.MeasurementToActuatorName[a.Type]
+		if !ok {
+			return nil, fmt.Errorf("no actuator name mapping for measurement type %q", a.Type)
+		}
+		types[i] = name
+	}
+	return types, nil
+}
+
+// ---------------------------------------------------------------------------
 // Credentials file
 // ---------------------------------------------------------------------------
 
@@ -233,7 +271,7 @@ Password: {{$u.Password}}
 Rooms:
 {{range $u.User.Rooms}}  {{.Name}}
     Devices:
-{{range .Devices}}      {{.HwID}}{{if .Config.Sensors}} (sensors: {{join .Config.Sensors ", "}}){{end}}{{if .Config.Actuators}} (actuators: {{join .Config.Actuators ", "}}){{end}}
+{{range .Devices}}      {{.HwID}}{{if .Config.Sensors}} (sensors: {{sensorTypes .Config.Sensors}}){{end}}{{if .Config.Actuators}} (actuators: {{actuatorTypes .Config.Actuators}}){{end}}
 {{end}}{{end}}{{end}}`
 
 func writeCredentials(simName string, users []provisionedUserWithCreds) error {
@@ -254,7 +292,20 @@ func writeCredentials(simName string, users []provisionedUserWithCreds) error {
 	}
 
 	funcMap := template.FuncMap{
-		"join": strings.Join,
+		"sensorTypes": func(sensors []config.SensorConfig) string {
+			return strings.Join(sensorTypeStrings(sensors), ", ")
+		},
+		"actuatorTypes": func(actuators []config.ActuatorConfig) string {
+			names := make([]string, len(actuators))
+			for i, a := range actuators {
+				if name, ok := config.MeasurementToActuatorName[a.Type]; ok {
+					names[i] = name
+				} else {
+					names[i] = a.Type
+				}
+			}
+			return strings.Join(names, ", ")
+		},
 	}
 
 	tmpl, err := template.New("credentials").Funcs(funcMap).Parse(credentialsTemplate)

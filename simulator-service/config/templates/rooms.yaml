@@ -1,29 +1,81 @@
 room_templates:
 
-  # --- noise ---
+  # Base physical values are defined as constants in config.go and apply to all
+  # rooms unless overridden via scale fields. Scale fields default to 1.0 if
+  # absent. High-variance rooms use elevated conductance_scale to represent
+  # poorer insulation — more heat and moisture lost to the environment per °C/
+  # %RH of difference. The high-variance conductance_scale of 2.67 for
+  # temperature (400/150) and 2.5 for humidity (0.005/0.002) represent the
+  # ratio of a drafty room's conductance to a standard room's conductance.
+
+  # ---------------------------------------------------------------------------
+  # Standard rooms — base temp 20°C, humidity 50%
+  # ---------------------------------------------------------------------------
+
   - id: standard-room
-    model:
-      type: noise
-      base_temp: 20.0
-      base_humidity: 50.0
-      noise:
-        temperature: 0.1
-        humidity: 0.5
+    measurements:
+      temperature:
+        base: 20.0
+        noise: 0.5
+      humidity:
+        base: 50.0
+        noise: 0.5
+
+  - id: standard-room-high
+    measurements:
+      temperature:
+        base: 20.0
+        noise: 0.2
+        conductance_scale: 2.67
+      humidity:
+        base: 50.0
+        noise: 0.8
+        conductance_scale: 2.5
+
+  # ---------------------------------------------------------------------------
+  # Warm rooms — base temp 26°C, humidity 60%
+  # ---------------------------------------------------------------------------
 
   - id: warm-room
-    model:
-      type: noise
-      base_temp: 26.0
-      base_humidity: 60.0
-      noise:
-        temperature: 0.1
-        humidity: 0.5
+    measurements:
+      temperature:
+        base: 26.0
+        noise: 0.5
+      humidity:
+        base: 60.0
+        noise: 0.5
+
+  - id: warm-room-high
+    measurements:
+      temperature:
+        base: 26.0
+        noise: 0.2
+        conductance_scale: 2.67
+      humidity:
+        base: 60.0
+        noise: 0.8
+        conductance_scale: 2.5
+
+  # ---------------------------------------------------------------------------
+  # Cold rooms — base temp 15°C, humidity 40%
+  # ---------------------------------------------------------------------------
 
   - id: cold-room
-    model:
-      type: noise
-      base_temp: 15.0
-      base_humidity: 40.0
-      noise:
-        temperature: 0.1
-        humidity: 0.5
+    measurements:
+      temperature:
+        base: 15.0
+        noise: 0.5
+      humidity:
+        base: 40.0
+        noise: 0.5
+
+  - id: cold-room-high
+    measurements:
+      temperature:
+        base: 15.0
+        noise: 0.2
+        conductance_scale: 2.67
+      humidity:
+        base: 40.0
+        noise: 0.8
+        conductance_scale: 2.5

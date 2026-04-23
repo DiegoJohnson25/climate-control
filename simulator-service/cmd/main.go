@@ -70,8 +70,6 @@ func run(cfg *config.Config) error {
 		errCh <- simulator.Run(ctx, cfg, users, mqttClient)
 	}()
 
-	log.Printf("simulator running — tick interval: %ds", cfg.Simulation.TickIntervalSeconds)
-
 	select {
 	case <-quit:
 		log.Println("shutting down")
