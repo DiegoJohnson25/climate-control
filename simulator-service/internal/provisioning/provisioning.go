@@ -1,8 +1,8 @@
-// Package provisioning bootstraps simulator users, rooms, and devices against
-// the api-service. It is idempotent: Run logs in first and only registers on
-// 401, and treats 409 responses from room/device creation as "already exists"
-// and falls back to lookup. Interactive user groups emit a credentials file
-// under /app/config/credentials for manual login.
+// Package provisioning bootstraps simulator users, rooms, devices, desired
+// state, and schedules against the api-service. It is idempotent: Run logs in
+// first and only registers on 401, and treats 409 responses from create
+// endpoints as "already exists" and falls back to lookup. Interactive user
+// groups emit a credentials file under /app/config/credentials for manual login.
 package provisioning
 
 import (
@@ -119,6 +119,42 @@ func Run(cfg *config.Config) ([]ProvisionedUser, error) {
 }
 
 // ---------------------------------------------------------------------------
+// Teardown
+// ---------------------------------------------------------------------------
+
+// Teardown deletes all resources provisioned for the simulation by deleting
+// each simulated user. Cascades to all rooms, devices, and schedules via
+// database foreign key constraints. Device-service caches for the deleted
+// rooms become stale but are corrected when rooms are recreated on the next
+// provisioning run via the Redis stream invalidation.
+func Teardown(cfg *config.Config) error {
+	client := api.NewClient(cfg.APIURL)
+	domain := emailDomain(cfg.EmailTemplate)
+
+	globalUserIdx := 0
+	for _, group := range cfg.Simulation.UserGroups {
+		for i := 0; i < group.Count; i++ {
+			email := generateEmail(cfg.Simulation.Name, globalUserIdx, domain)
+
+			token, err := client.Login(email, cfg.Password)
+			if err != nil {
+				// user does not exist — nothing to tear down
+				globalUserIdx++
+				continue
+			}
+
+			if err := client.DeleteMe(token); err != nil {
+				return fmt.Errorf("delete user %s: %w", email, err)
+			}
+
+			globalUserIdx++
+		}
+	}
+
+	return nil
+}
+
+// ---------------------------------------------------------------------------
 // Room and device provisioning
 // ---------------------------------------------------------------------------
 
@@ -145,6 +181,18 @@ func provisionRooms(client *api.Client, token, simName string, userIdx int, room
 			devices, err := provisionDevices(client, token, simName, userIdx, localRoomIdx, roomID, roomName, def.Devices, devicesByHwID)
 			if err != nil {
 				return nil, fmt.Errorf("provision devices for room %s: %w", roomName, err)
+			}
+
+			if def.DesiredState != nil {
+				if err := client.UpdateDesiredState(token, roomID, def.DesiredState.TargetTemp, def.DesiredState.TargetHum); err != nil {
+					return nil, fmt.Errorf("update desired state for room %s: %w", roomName, err)
+				}
+			}
+
+			if def.Schedule != nil {
+				if err := provisionSchedule(client, token, roomID, roomName, def.Schedule); err != nil {
+					return nil, fmt.Errorf("provision schedule for room %s: %w", roomName, err)
+				}
 			}
 
 			rooms = append(rooms, ProvisionedRoom{
@@ -202,6 +250,51 @@ func provisionDevices(client *api.Client, token, simName string, userIdx, roomId
 	}
 
 	return devices, nil
+}
+
+// provisionSchedule creates the schedule, its periods, and activates it.
+// On name conflict, falls back to the existing schedule by name. On period
+// overlap conflict, skips the period — a re-run with identical YAML produces
+// identical periods, so overlap means already provisioned. Capability conflict
+// on activation is a fatal error — it means the room's devices cannot satisfy
+// the schedule's period requirements.
+func provisionSchedule(client *api.Client, token, roomID, roomName string, sched *config.ResolvedSchedule) error {
+	scheduleID, err := client.CreateSchedule(token, roomID, sched.Name)
+	if err != nil {
+		if err != api.ErrConflict {
+			return fmt.Errorf("create schedule %q: %w", sched.Name, err)
+		}
+		existing, err := client.ListSchedules(token, roomID)
+		if err != nil {
+			return fmt.Errorf("list schedules after conflict: %w", err)
+		}
+		scheduleID = ""
+		for _, s := range existing {
+			if s.Name == sched.Name {
+				scheduleID = s.ID
+				break
+			}
+		}
+		if scheduleID == "" {
+			return fmt.Errorf("schedule %q not found in list after conflict", sched.Name)
+		}
+	}
+
+	for _, p := range sched.Periods {
+		err := client.CreatePeriod(token, scheduleID, p.DaysOfWeek, p.StartTime, p.EndTime, p.Mode, p.TargetTemp, p.TargetHum)
+		if err != nil && err != api.ErrConflict {
+			return fmt.Errorf("create period for schedule %q: %w", sched.Name, err)
+		}
+	}
+
+	if err := client.ActivateSchedule(token, scheduleID); err != nil {
+		if err == api.ErrCapabilityConflict {
+			return fmt.Errorf("activate schedule %q for room %s: room lacks required device capabilities", sched.Name, roomName)
+		}
+		return fmt.Errorf("activate schedule %q: %w", sched.Name, err)
+	}
+
+	return nil
 }
 
 // ---------------------------------------------------------------------------

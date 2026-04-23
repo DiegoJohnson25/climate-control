@@ -279,3 +279,6 @@ mqtt-device:
 	  -u $${MQTT_DEVICE_SERVICE_USERNAME} -P $${MQTT_DEVICE_SERVICE_PASSWORD} \
 	  -v
 
+db-metrics-size:
+	docker exec climate-control-timescaledb-1 psql -U $$(grep TIMESCALE_USER .env | cut -d= -f2) -d $$(grep TIMESCALE_DB .env | cut -d= -f2) -c \
+		"SELECT hypertable_name, pg_size_pretty(hypertable_size(format('%I', hypertable_name)::regclass)) AS total_size, num_chunks FROM timescaledb_information.hypertables;"
