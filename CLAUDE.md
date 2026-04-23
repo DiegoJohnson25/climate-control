@@ -16,7 +16,7 @@ The project serves as a portfolio piece demonstrating distributed systems design
 
 **device-service** — Standalone Go binary. Minimal HTTP server on `:8081` for health checks only. Subscribes to MQTT telemetry (Phases 3–6) or Kafka (Phase 7), maintains an in-memory cache of room and device state, runs a bang-bang control loop per room, publishes actuator commands via MQTT, writes sensor readings and control logs to TimescaleDB. Consumes the Redis Stream from api-service to keep its cache in sync.
 
-**simulator-service** — Provisions simulated users, rooms, devices, and schedules via the api-service REST API. Publishes realistic sensor telemetry via MQTT. Reacts to actuator commands — room temperature and humidity evolve based on active actuator contributions and passive return-to-ambient. Allows the full system to be demonstrated without physical hardware. Started via `docker compose --profile simulation` or `make simulator-start`.
+**simulator-service** — Provisions simulated users, rooms, devices, desired states, and schedules via the api-service REST API. Publishes realistic sensor telemetry via MQTT. Reacts to actuator commands — room temperature and humidity evolve based on active actuator contributions and passive return-to-ambient. Allows the full system to be demonstrated without physical hardware. Started via `docker compose --profile simulation` or `make simulator-start`.
 
 **mqtt-bridge** — New service added in Phase 7. Subscribes to Mosquitto telemetry, resolves hw_id to room_id, and produces to Kafka. The only service that talks to Mosquitto for telemetry in Phase 7 — device-service no longer subscribes to Mosquitto directly.
 
@@ -40,8 +40,9 @@ The project serves as a portfolio piece demonstrating distributed systems design
 - Phase 3e ✅ — device-service stream: Redis stream consumer, cache invalidation
 - Phase 4a ✅ — CI pipeline, device-service health server, compose health checks, simulator profile
 - Phase 4b ✅ — reactive room model, environment model, time scaling, physical units
+- Phase 4c ✅ — desired state + schedule provisioning, teardown, demo.yaml 4-user topology
 
-**Active branch:** none — clean main, about to start Phase 4c
+**Active branch:** none — clean main, about to start Phase 5a
 
 ---
 
@@ -49,8 +50,7 @@ The project serves as a portfolio piece demonstrating distributed systems design
 
 | Phase | Branch | Scope |
 |---|---|---|
-| 1–4b | — | Repo scaffold, full API, device-service, simulator scaffold, CI, reactive model | ✅ Done |
-| 4c | `feat/simulator-schedules` | Schedule definitions in simulation YAML, provisioning at bootstrap, teardown implementation, two additional demo users |
+| 1–4c | — | Repo scaffold, full API, device-service, simulator, CI, reactive model, schedules | ✅ Done |
 | 5a | `feat/api-service-climate` | `GET /rooms/:id/climate`, `GET /rooms/:id/climate/history`, Postman verified |
 | 5b | `feat/nginx` | Single entry point, static file serving, API proxy via Docker DNS, horizontal scaling demonstrated, Postman environments updated |
 | 6a | `feat/client-scaffold` | Vite project, routing, auth flow, JWT handling, persistent nav, SWR setup |
@@ -105,14 +105,14 @@ climate-control/
 ├── simulator-service/
 │   ├── cmd/main.go       # flag parsing, run/teardown modes, signal handling
 │   ├── config/
-│   │   ├── templates/    # rooms.yaml, devices.yaml
+│   │   ├── templates/    # rooms.yaml, devices.yaml, desired_states.yaml, schedules.yaml
 │   │   ├── simulations/  # default.yaml, cache-test.yaml, demo.yaml
 │   │   └── credentials/  # gitignored, written at runtime for interactive groups
 │   └── internal/
 │       ├── api/          # client.go — HTTP client for api-service
 │       ├── config/       # config.go — env + YAML loading, template resolution, timing derivation
 │       ├── mqtt/         # client.go — Paho wrapper
-│       ├── provisioning/ # provisioning.go — bootstrap, identity generation
+│       ├── provisioning/ # provisioning.go — bootstrap, teardown, identity generation
 │       └── simulator/    # simulator.go, room_state.go, model.go
 ├── web-client/           # Phase 6 — Vite + React SPA
 ├── mqtt-bridge/          # Phase 7 — MQTT → Kafka bridge service
@@ -168,7 +168,7 @@ climate-control/
 | Technology | Purpose |
 |---|---|
 | Eclipse Paho Go | MQTT client — telemetry publish, command subscribe |
-| gopkg.in/yaml.v3 | Simulation config and template loading |
+| goccy/go-yaml | Simulation config and template loading |
 
 ### Web client (Phase 6)
 
@@ -517,23 +517,42 @@ The Kafka bridge handles telemetry only.
 See `docs/architecture/simulator.md` for full detail. Key points:
 
 **Invocation:** simulator-service has `profiles: ["simulation"]` in docker-compose —
-excluded from normal `docker compose up`. Use `make simulator-start SIM=<n>` or
-`make demo` (starts stack + default simulation). `docker compose run` bypasses
-profiles and is used for teardown.
+excluded from normal `docker compose up`. Use `make simulator-start SIM=<name>` or
+`make demo` (starts stack + default simulation). `docker compose run` used for teardown.
 
-**Config system:** two-file separation — template files define reusable room and
-device types; simulation files compose them into a topology. Templates dissolved
-into flat concrete structs at load time. Simulation selected via `--simulation` flag
-(no default — must be explicit).
+**Config system:** four template files (`rooms.yaml`, `devices.yaml`,
+`desired_states.yaml`, `schedules.yaml`) and simulation files that compose them into
+a topology. Templates dissolved into flat concrete structs at load time. Simulation
+selected via `--simulation` flag — no default, must be explicit on every invocation.
 
 **Identity generation (deterministic):**
 ```
 email:  sim-{sim_name}-user-{000}@{domain}
 hw_id:  sim-{sim_name}-{user_idx}-{room_idx}-{device_idx}
 ```
+Same simulation name always produces the same identities — makes provisioning
+idempotent across hard resets and teardown/re-run cycles.
 
-**Provisioning:** login-first auth (register only on 401), idempotent via 409 handling,
-upfront list fetching. Phase 4c adds schedule provisioning and teardown.
+**Provisioning sequence (per user):**
+1. Login-first auth — register only on 401
+2. Fetch existing rooms and devices — build name/hw_id lookup maps
+3. Create rooms (409 → lookup by name)
+4. Create and assign devices (409 → lookup by hw_id)
+5. PUT desired state if configured for the room (always PUT — idempotent full replacement)
+6. Create schedule + periods + activate if configured for the room
+   (name 409 → lookup by name; period 409 → skip; capability conflict → fatal error)
+
+**Desired state vs schedule — mutually exclusive per room:**
+- `desired_state` — AUTO mode with indefinite override. Used for direct control
+  behaviour testing. Mode and override are implicit — not configurable in YAML.
+- `schedule` — time-windowed control. Used for realistic simulation. Content not
+  overridable inline — create a new template for different values.
+- A room entry with both set is a load-time error.
+
+**Teardown:** `--mode=teardown` calls `DELETE /users/me` for each simulated user.
+Cascades to all rooms, devices, and schedules via DB foreign key constraints.
+Device-service caches for deleted rooms become stale but are corrected on the next
+provisioning run via Redis stream invalidation.
 
 **Environment model:**
 
@@ -561,7 +580,7 @@ Base physical constants defined once in `internal/config/config.go`:
 
 Templates carry only scale multipliers — `thermal_mass_scale` and `conductance_scale`
 on room templates, `rate_scale` on device actuator entries. Simulation file entries
-can override template scales. All defaults to 1.0 if absent.
+can override template scales. All default to 1.0 if absent.
 
 **Two-axis room behaviour:**
 
@@ -576,8 +595,8 @@ can override template scales. All defaults to 1.0 if absent.
 ```go
 type RoomState struct {
     Mu            sync.RWMutex
-    Current       map[string]float64  // evolves per tick
-    Ambient       map[string]float64  // never changes after init
+    Current       map[string]float64             // evolves per tick
+    Ambient       map[string]float64             // never changes after init
     contributions map[string]map[string]float64  // hwID/type → measurementType → watts
     heatInput     map[string]float64             // derived sum, recomputed on change
 }
@@ -587,7 +606,7 @@ Actuator contributions keyed by `hwID/measurementType` — a climate-controller 
 both temperature and humidity actuators has two independent contribution entries.
 `HeatInput()` returns a snapshot safe to read without holding `Mu`.
 
-**Goroutine structure (Option B — split concerns):**
+**Goroutine structure (split concerns):**
 - Sensor goroutine per device with sensors — publish loop, calls `advanceRoom` each tick
 - Actuator goroutine per actuator per device — command subscription + watchdog
 - `advanceRoom` snapshots `HeatInput()` before acquiring `Mu.Lock`, passes snapshot
@@ -611,8 +630,8 @@ watchdogTimeout           = baseTickSeconds * watchdogMultiplier (real wall-cloc
 ```
 
 `baseTickSeconds` = `CONTROL_TICK_INTERVAL_SECONDS` — shared with device-service.
-`minPublishIntervalMS` defaults to 500ms, overridable in simulation YAML.
-`maxTimeScale` = 400 — hard cap, validated at load time.
+`minPublishIntervalMS` defaults to 500ms, overridable in simulation YAML via
+`min_publish_interval_ms`. `maxTimeScale` = 400 — hard cap, validated at load time.
 `watchdogMultiplier` = 3 — hardcoded constant.
 
 Below the floor crossover (`timeScale ≤ baseTickSeconds / minPublishInterval`),
@@ -625,13 +644,21 @@ is capped and `simulatedTickSeconds` grows proportionally to maintain correct ph
 Parameters may need tuning once the client graphs are available.
 
 **Simulation files:**
-- `default.yaml` — single user, standard room, separate sensor + actuator devices, `time_scale: 120`
-- `cache-test.yaml` — 5 rooms covering all capability combinations, `time_scale: 1.0`
-- `demo.yaml` — 2 users (single-sensor and multi-sensor variants), 3 rooms each, `time_scale: 120`
+- `default.yaml` — single user, standard room, full climate device set, `time_scale: 60`,
+  `min_publish_interval_ms: 2000`, comfort desired state
+- `cache-test.yaml` — 5 rooms covering all capability combinations, `time_scale: 1.0`,
+  no desired state or schedules (telemetry-only, used for cache warm verification)
+- `demo.yaml` — 4 users across a 2x2 matrix (device config × control mechanism),
+  3 rooms each, `time_scale: 10`
 
-**Teardown (Phase 4c):** `--mode=teardown` deletes all provisioned resources in
-dependency order: deactivate schedules → delete periods → delete schedules →
-unassign devices → delete devices → delete rooms → delete user.
+**demo.yaml user matrix:**
+
+| User | Device config | Control mechanism |
+|---|---|---|
+| user-000 | single sensor per type | desired state (indefinite override) |
+| user-001 | multiple sensors per type | desired state (indefinite override) |
+| user-002 | single sensor per type | schedules |
+| user-003 | multiple sensors per type | schedules |
 
 **Publish loop:** sensor goroutines staggered by `effectivePublishInterval * deviceIndex / totalDevices`.
 
@@ -732,3 +759,4 @@ See `docs/architecture/future-features.md` for design notes. Tracked items:
 - Connection pool size via env (`DB_POOL_SIZE`)
 - Freeform simulator client (runtime room/device creation, physics model)
 - Android app (Kotlin + Jetpack Compose)
+- TimescaleDB retention policy + continuous aggregates (Phase 8 cleanup)

@@ -1,5 +1,16 @@
+# simulator-service/config/simulations/default.yaml
+#
+# Single-user simulation for quick local runs and end-to-end verification.
+# One reactive room with a full climate device set (sensor + heater + humidifier).
+# Time scale 120 accelerates the room model for faster observable behaviour.
+#
+# The room is configured with a comfort desired state — AUTO mode with an
+# indefinite override at 22°C / 55% RH. This keeps the control loop active
+# and producing commands without requiring a schedule to be in effect.
+
 simulation:
-  time_scale: 120
+  time_scale: 60
+  min_publish_interval_ms: 2000
   user_groups:
     - count: 1
       interactive: true
@@ -9,6 +20,7 @@ simulation:
           type: reactive
           noisy: true
           count: 1
+          desired_state: comfort
           devices:
             - template: climate-sensor
               name_prefix: climate-sensor

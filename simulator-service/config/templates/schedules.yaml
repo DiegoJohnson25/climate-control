@@ -1,0 +1,88 @@
+# simulator-service/config/templates/schedules.yaml
+#
+# Reusable schedule templates. Referenced by simulation file room entries via
+# the schedule field. Schedule content is not overridable inline — create a
+# new template for different values.
+#
+# days_of_week: 1=Monday, 7=Sunday (matches api-service contract).
+# Period name is omitted — optional in the API and has no functional value here.
+# AUTO periods require at least one of target_temp or target_hum.
+
+schedule_templates:
+  # Comfort during waking hours on weekdays only.
+  - id: weekday-comfort
+    name: "Weekday Comfort"
+    periods:
+      - days_of_week: [1, 2, 3, 4, 5]
+        start_time: "07:00"
+        end_time: "22:00"
+        mode: AUTO
+        target_temp: 22.0
+        target_hum: 55.0
+
+  # Comfort during waking hours every day of the week.
+  - id: full-week-comfort
+    name: "Full Week Comfort"
+    periods:
+      - days_of_week: [1, 2, 3, 4, 5, 6, 7]
+        start_time: "07:00"
+        end_time: "22:00"
+        mode: AUTO
+        target_temp: 22.0
+        target_hum: 55.0
+
+  # Simulates a typical weekday work-from-home pattern — morning warmup,
+  # evening comfort, weekend all-day comfort. Exercises multiple periods
+  # per schedule and day-overlap between weekday and weekend entries.
+  - id: weekday-work-pattern
+    name: "Weekday Work Pattern"
+    periods:
+      - days_of_week: [1, 2, 3, 4, 5]
+        start_time: "06:00"
+        end_time: "09:00"
+        mode: AUTO
+        target_temp: 21.0
+      - days_of_week: [1, 2, 3, 4, 5]
+        start_time: "17:00"
+        end_time: "23:00"
+        mode: AUTO
+        target_temp: 22.0
+        target_hum: 55.0
+      - days_of_week: [6, 7]
+        start_time: "08:00"
+        end_time: "23:00"
+        mode: AUTO
+        target_temp: 21.0
+        target_hum: 55.0
+
+  # Comfort during waking hours on weekdays — temperature only.
+  # Use for rooms with no humidity sensor or humidifier.
+  - id: weekday-comfort-temp
+    name: "Weekday Comfort"
+    periods:
+      - days_of_week: [1, 2, 3, 4, 5]
+        start_time: "07:00"
+        end_time: "22:00"
+        mode: AUTO
+        target_temp: 22.0
+
+  # Weekday work pattern — temperature only.
+  # Use for rooms with no humidity sensor or humidifier.
+  - id: weekday-work-pattern-temp
+    name: "Weekday Work Pattern"
+    periods:
+      - days_of_week: [1, 2, 3, 4, 5]
+        start_time: "06:00"
+        end_time: "09:00"
+        mode: AUTO
+        target_temp: 21.0
+      - days_of_week: [1, 2, 3, 4, 5]
+        start_time: "17:00"
+        end_time: "23:00"
+        mode: AUTO
+        target_temp: 22.0
+      - days_of_week: [6, 7]
+        start_time: "08:00"
+        end_time: "23:00"
+        mode: AUTO
+        target_temp: 21.0

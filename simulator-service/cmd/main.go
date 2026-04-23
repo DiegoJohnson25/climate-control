@@ -84,8 +84,9 @@ func run(cfg *config.Config) error {
 
 func teardown(cfg *config.Config) error {
 	log.Printf("tearing down simulation: %s", cfg.Simulation.Name)
-
-	// TODO: implement teardown (requires api/client.go DeleteMe)
+	if err := provisioning.Teardown(cfg); err != nil {
+		return fmt.Errorf("teardown: %w", err)
+	}
 	log.Printf("teardown complete")
 	return nil
 }

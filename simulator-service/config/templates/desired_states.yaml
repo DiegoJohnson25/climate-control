@@ -1,0 +1,26 @@
+# simulator-service/config/templates/desired_states.yaml
+#
+# Reusable desired state templates. Referenced by simulation file room entries
+# via the desired_state field. Simulation files may override target_temp and
+# target_hum inline per room — the inline value wins over the template value
+# for that field when present.
+#
+# Mode is always AUTO and manual_override_until is always "indefinite" —
+# neither is configurable. Desired state templates are only useful when at
+# least one target is set.
+
+desired_state_templates:
+  - id: comfort
+    target_temp: 22.0
+    target_hum: 55.0
+
+  - id: warm
+    target_temp: 24.0
+
+  - id: cool
+    target_temp: 19.0
+    target_hum: 50.0
+
+  - id: humid-comfort
+    target_temp: 22.0
+    target_hum: 60.0

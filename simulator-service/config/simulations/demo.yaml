@@ -3,21 +3,24 @@
 # Realistic multi-user simulation intended for demonstration and historical
 # data generation. All rooms are reactive and noisy.
 #
-# Two users are defined now — single-sensor and multi-sensor variants.
-# Two additional users (schedule-driven and manual-override) will be added
-# in Phase 4c once schedule provisioning and teardown are implemented.
+# Four users across a 2x2 matrix of device configuration and control mechanism:
+#
+#   user-000 — single sensor per type, desired state (indefinite override)
+#   user-001 — multiple sensors per type, desired state (indefinite override)
+#   user-002 — single sensor per type, schedules
+#   user-003 — multiple sensors per type, schedules
+#
+# user-000 and user-002 share the same room and device topology. user-001 and
+# user-003 share the same room and device topology (exercises sensor aggregation).
 #
 # All user groups are interactive — credentials written to
-# /app/config/credentials/demo.txt. Any user can be logged into via the
-# client to view live readings and historical data.
-#
-# User layout:
-#   user-000 — one sensor per type per room
-#   user-001 — multiple sensors per type per room (exercises aggregation)
+# /app/config/credentials/demo.txt for manual login via the client.
+
 simulation:
   time_scale: 10
   user_groups:
-    # user-000: single sensor per type per room
+
+    # user-000: single sensor per type, desired state
     - count: 1
       interactive: true
       rooms:
@@ -26,6 +29,7 @@ simulation:
           type: reactive
           noisy: true
           count: 1
+          desired_state: comfort
           devices:
             - template: climate-sensor
               name_prefix: climate-sensor
@@ -36,12 +40,12 @@ simulation:
             - template: humidifier
               name_prefix: humidifier
               count: 1
-
         - template: warm-room
           name_prefix: bedroom
           type: reactive
           noisy: true
           count: 1
+          desired_state: warm
           devices:
             - template: temp-sensor
               name_prefix: temp-sensor
@@ -49,12 +53,12 @@ simulation:
             - template: heater
               name_prefix: heater
               count: 1
-
         - template: cold-room
           name_prefix: basement
           type: reactive
           noisy: true
           count: 1
+          desired_state: cool
           devices:
             - template: climate-sensor
               name_prefix: climate-sensor
@@ -66,7 +70,7 @@ simulation:
               name_prefix: humidifier
               count: 1
 
-    # user-001: multiple sensors per type per room (exercises sensor aggregation)
+    # user-001: multiple sensors per type, desired state (exercises aggregation)
     - count: 1
       interactive: true
       rooms:
@@ -75,6 +79,36 @@ simulation:
           type: reactive
           noisy: true
           count: 1
+          desired_state: comfort
+          devices:
+            - template: climate-sensor
+              name_prefix: climate-sensor
+              count: 2
+            - template: heater
+              name_prefix: heater
+              count: 1
+            - template: humidifier
+              name_prefix: humidifier
+              count: 1
+        - template: warm-room
+          name_prefix: bedroom
+          type: reactive
+          noisy: true
+          count: 1
+          desired_state: warm
+          devices:
+            - template: temp-sensor
+              name_prefix: temp-sensor
+              count: 2
+            - template: heater
+              name_prefix: heater
+              count: 1
+        - template: cold-room
+          name_prefix: basement
+          type: reactive
+          noisy: true
+          count: 1
+          desired_state: cool
           devices:
             - template: climate-sensor
               name_prefix: climate-sensor
@@ -86,11 +120,82 @@ simulation:
               name_prefix: humidifier
               count: 1
 
+    # user-002: single sensor per type, schedules
+    - count: 1
+      interactive: true
+      rooms:
+        - template: standard-room
+          name_prefix: living-room
+          type: reactive
+          noisy: true
+          count: 1
+          schedule: weekday-comfort
+          devices:
+            - template: climate-sensor
+              name_prefix: climate-sensor
+              count: 1
+            - template: heater
+              name_prefix: heater
+              count: 1
+            - template: humidifier
+              name_prefix: humidifier
+              count: 1
         - template: warm-room
           name_prefix: bedroom
           type: reactive
           noisy: true
           count: 1
+          schedule: weekday-comfort-temp
+          devices:
+            - template: temp-sensor
+              name_prefix: temp-sensor
+              count: 1
+            - template: heater
+              name_prefix: heater
+              count: 1
+        - template: cold-room
+          name_prefix: basement
+          type: reactive
+          noisy: true
+          count: 1
+          schedule: weekday-comfort
+          devices:
+            - template: climate-sensor
+              name_prefix: climate-sensor
+              count: 1
+            - template: heater
+              name_prefix: heater
+              count: 1
+            - template: humidifier
+              name_prefix: humidifier
+              count: 1
+
+    # user-003: multiple sensors per type, schedules (exercises aggregation)
+    - count: 1
+      interactive: true
+      rooms:
+        - template: standard-room
+          name_prefix: living-room
+          type: reactive
+          noisy: true
+          count: 1
+          schedule: weekday-work-pattern
+          devices:
+            - template: climate-sensor
+              name_prefix: climate-sensor
+              count: 2
+            - template: heater
+              name_prefix: heater
+              count: 1
+            - template: humidifier
+              name_prefix: humidifier
+              count: 1
+        - template: warm-room
+          name_prefix: bedroom
+          type: reactive
+          noisy: true
+          count: 1
+          schedule: weekday-work-pattern-temp
           devices:
             - template: temp-sensor
               name_prefix: temp-sensor
@@ -98,12 +203,12 @@ simulation:
             - template: heater
               name_prefix: heater
               count: 1
-
         - template: cold-room
           name_prefix: basement
           type: reactive
           noisy: true
           count: 1
+          schedule: weekday-work-pattern
           devices:
             - template: climate-sensor
               name_prefix: climate-sensor

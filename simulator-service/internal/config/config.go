@@ -141,7 +141,7 @@ type UserGroup struct {
 }
 
 // Room holds the fully resolved configuration for a simulated room, including
-// its environment model parameters and the devices assigned to it.
+// its environment model parameters, devices, and optional control configuration.
 type Room struct {
 	NamePrefix   string
 	Count        int
@@ -149,6 +149,8 @@ type Room struct {
 	Noisy        bool
 	Measurements map[string]MeasurementConfig
 	Devices      []Device
+	DesiredState *ResolvedDesiredState // nil if not configured for this room
+	Schedule     *ResolvedSchedule     // nil if not configured for this room
 }
 
 // MeasurementConfig holds the fully resolved environment model parameters for
@@ -180,6 +182,32 @@ type SensorConfig struct {
 type ActuatorConfig struct {
 	Type string
 	Rate float64 // fully resolved power output in physical units
+}
+
+// ResolvedDesiredState holds the target values to provision via
+// PUT /rooms/:id/desired-state. Mode is always AUTO and manual_override_until
+// is always "indefinite" — neither is configurable.
+type ResolvedDesiredState struct {
+	TargetTemp *float64
+	TargetHum  *float64
+}
+
+// ResolvedSchedule holds the schedule name and periods to provision via the
+// schedule and period create endpoints.
+type ResolvedSchedule struct {
+	Name    string
+	Periods []ResolvedPeriod
+}
+
+// ResolvedPeriod holds the fully resolved parameters for a single schedule
+// period. DaysOfWeek uses 1=Monday, 7=Sunday, matching the api-service contract.
+type ResolvedPeriod struct {
+	DaysOfWeek []int
+	StartTime  string
+	EndTime    string
+	Mode       string
+	TargetTemp *float64
+	TargetHum  *float64
 }
 
 // ---------------------------------------------------------------------------
@@ -223,6 +251,35 @@ type rawActuatorConfig struct {
 	RateScale float64 `yaml:"rate_scale"`
 }
 
+type rawDesiredStateTemplates struct {
+	DesiredStateTemplates []rawDesiredStateTemplate `yaml:"desired_state_templates"`
+}
+
+type rawDesiredStateTemplate struct {
+	ID         string   `yaml:"id"`
+	TargetTemp *float64 `yaml:"target_temp"`
+	TargetHum  *float64 `yaml:"target_hum"`
+}
+
+type rawScheduleTemplates struct {
+	ScheduleTemplates []rawScheduleTemplate `yaml:"schedule_templates"`
+}
+
+type rawScheduleTemplate struct {
+	ID      string              `yaml:"id"`
+	Name    string              `yaml:"name"`
+	Periods []rawPeriodTemplate `yaml:"periods"`
+}
+
+type rawPeriodTemplate struct {
+	DaysOfWeek []int    `yaml:"days_of_week"`
+	StartTime  string   `yaml:"start_time"`
+	EndTime    string   `yaml:"end_time"`
+	Mode       string   `yaml:"mode"`
+	TargetTemp *float64 `yaml:"target_temp"`
+	TargetHum  *float64 `yaml:"target_hum"`
+}
+
 type rawSimulation struct {
 	TemplateOverrides rawTemplateOverrides `yaml:"template_overrides"`
 	Simulation        rawSimulationBlock   `yaml:"simulation"`
@@ -254,6 +311,14 @@ type rawRoom struct {
 	ThermalMassScale *float64    `yaml:"thermal_mass_scale"`
 	ConductanceScale *float64    `yaml:"conductance_scale"`
 	Devices          []rawDevice `yaml:"devices"`
+	// DesiredStateRef names a desired_state template. Inline TargetTemp and
+	// TargetHum override the template values per field when present.
+	DesiredStateRef string   `yaml:"desired_state"`
+	TargetTemp      *float64 `yaml:"target_temp"`
+	TargetHum       *float64 `yaml:"target_hum"`
+	// ScheduleRef names a schedule template. Schedule content is not
+	// overridable inline — use a separate template for different values.
+	ScheduleRef string `yaml:"schedule"`
 }
 
 type rawDevice struct {
@@ -281,6 +346,16 @@ func Load(simulationName string) (*Config, error) {
 		return nil, fmt.Errorf("load device templates: %w", err)
 	}
 
+	desiredStateTemplates, err := loadDesiredStateTemplates("/app/config/templates/desired_states.yaml")
+	if err != nil {
+		return nil, fmt.Errorf("load desired state templates: %w", err)
+	}
+
+	scheduleTemplates, err := loadScheduleTemplates("/app/config/templates/schedules.yaml")
+	if err != nil {
+		return nil, fmt.Errorf("load schedule templates: %w", err)
+	}
+
 	rawSim, err := loadSimulation("/app/config/simulations/" + simulationName + ".yaml")
 	if err != nil {
 		return nil, fmt.Errorf("load simulation %q: %w", simulationName, err)
@@ -289,7 +364,7 @@ func Load(simulationName string) (*Config, error) {
 	roomTemplates = applyRoomOverrides(roomTemplates, rawSim.TemplateOverrides.RoomTemplates)
 	deviceTemplates = applyDeviceOverrides(deviceTemplates, rawSim.TemplateOverrides.DeviceTemplates)
 
-	simulation, err := resolveSimulation(simulationName, rawSim.Simulation, roomTemplates, deviceTemplates)
+	simulation, err := resolveSimulation(simulationName, rawSim.Simulation, roomTemplates, deviceTemplates, desiredStateTemplates, scheduleTemplates)
 	if err != nil {
 		return nil, fmt.Errorf("resolve simulation: %w", err)
 	}
@@ -363,6 +438,38 @@ func loadDeviceTemplates(path string) (map[string]rawDeviceTemplate, error) {
 	return templates, nil
 }
 
+func loadDesiredStateTemplates(path string) (map[string]rawDesiredStateTemplate, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var raw rawDesiredStateTemplates
+	if err := yaml.Unmarshal(data, &raw); err != nil {
+		return nil, err
+	}
+	templates := make(map[string]rawDesiredStateTemplate, len(raw.DesiredStateTemplates))
+	for _, t := range raw.DesiredStateTemplates {
+		templates[t.ID] = t
+	}
+	return templates, nil
+}
+
+func loadScheduleTemplates(path string) (map[string]rawScheduleTemplate, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var raw rawScheduleTemplates
+	if err := yaml.Unmarshal(data, &raw); err != nil {
+		return nil, err
+	}
+	templates := make(map[string]rawScheduleTemplate, len(raw.ScheduleTemplates))
+	for _, t := range raw.ScheduleTemplates {
+		templates[t.ID] = t
+	}
+	return templates, nil
+}
+
 func loadSimulation(path string) (*rawSimulation, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -411,7 +518,7 @@ func applyDeviceOverrides(base map[string]rawDeviceTemplate, overrides []rawDevi
 // Resolution
 // ---------------------------------------------------------------------------
 
-func resolveSimulation(name string, raw rawSimulationBlock, roomTpls map[string]rawRoomTemplate, devTpls map[string]rawDeviceTemplate) (Simulation, error) {
+func resolveSimulation(name string, raw rawSimulationBlock, roomTpls map[string]rawRoomTemplate, devTpls map[string]rawDeviceTemplate, dsTpls map[string]rawDesiredStateTemplate, schedTpls map[string]rawScheduleTemplate) (Simulation, error) {
 	timeScale := raw.TimeScale
 	if timeScale <= 0 {
 		timeScale = defaultTimeScale
@@ -452,6 +559,20 @@ func resolveSimulation(name string, raw rawSimulationBlock, roomTpls map[string]
 				devices = append(devices, resolveDevice(rd, dtpl))
 			}
 
+			ds, err := resolveDesiredState(rr, dsTpls)
+			if err != nil {
+				return Simulation{}, fmt.Errorf("room %q: %w", rr.NamePrefix, err)
+			}
+
+			sched, err := resolveSchedule(rr, schedTpls)
+			if err != nil {
+				return Simulation{}, fmt.Errorf("room %q: %w", rr.NamePrefix, err)
+			}
+
+			if ds != nil && sched != nil {
+				return Simulation{}, fmt.Errorf("room %q: desired_state and schedule are mutually exclusive", rr.NamePrefix)
+			}
+
 			rooms = append(rooms, Room{
 				NamePrefix:   rr.NamePrefix,
 				Count:        rr.Count,
@@ -459,6 +580,8 @@ func resolveSimulation(name string, raw rawSimulationBlock, roomTpls map[string]
 				Noisy:        rr.Noisy,
 				Measurements: measurements,
 				Devices:      devices,
+				DesiredState: ds,
+				Schedule:     sched,
 			})
 		}
 
@@ -474,6 +597,71 @@ func resolveSimulation(name string, raw rawSimulationBlock, roomTpls map[string]
 		TimeScale:            timeScale,
 		MinPublishIntervalMS: minPublishIntervalMS,
 		UserGroups:           groups,
+	}, nil
+}
+
+// resolveDesiredState builds a ResolvedDesiredState from a raw room entry.
+// If a template ref is present, its values are used as the base. Inline
+// TargetTemp and TargetHum override the template values per field when present.
+// Returns nil if neither a template ref nor inline values are specified.
+func resolveDesiredState(rr rawRoom, tpls map[string]rawDesiredStateTemplate) (*ResolvedDesiredState, error) {
+	var base rawDesiredStateTemplate
+
+	if rr.DesiredStateRef != "" {
+		tpl, ok := tpls[rr.DesiredStateRef]
+		if !ok {
+			return nil, fmt.Errorf("desired_state template %q not found", rr.DesiredStateRef)
+		}
+		base = tpl
+	}
+
+	targetTemp := base.TargetTemp
+	if rr.TargetTemp != nil {
+		targetTemp = rr.TargetTemp
+	}
+
+	targetHum := base.TargetHum
+	if rr.TargetHum != nil {
+		targetHum = rr.TargetHum
+	}
+
+	if targetTemp == nil && targetHum == nil {
+		return nil, nil
+	}
+
+	return &ResolvedDesiredState{
+		TargetTemp: targetTemp,
+		TargetHum:  targetHum,
+	}, nil
+}
+
+// resolveSchedule builds a ResolvedSchedule from a raw room entry's schedule
+// template reference. Returns nil if no schedule ref is specified.
+func resolveSchedule(rr rawRoom, tpls map[string]rawScheduleTemplate) (*ResolvedSchedule, error) {
+	if rr.ScheduleRef == "" {
+		return nil, nil
+	}
+
+	tpl, ok := tpls[rr.ScheduleRef]
+	if !ok {
+		return nil, fmt.Errorf("schedule template %q not found", rr.ScheduleRef)
+	}
+
+	periods := make([]ResolvedPeriod, len(tpl.Periods))
+	for i, p := range tpl.Periods {
+		periods[i] = ResolvedPeriod{
+			DaysOfWeek: p.DaysOfWeek,
+			StartTime:  p.StartTime,
+			EndTime:    p.EndTime,
+			Mode:       p.Mode,
+			TargetTemp: p.TargetTemp,
+			TargetHum:  p.TargetHum,
+		}
+	}
+
+	return &ResolvedSchedule{
+		Name:    tpl.Name,
+		Periods: periods,
 	}, nil
 }
 
