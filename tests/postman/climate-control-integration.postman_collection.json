@@ -1,6 +1,6 @@
 {
   "info": {
-    "_postman_id": "f7e4a216-a4cd-4695-9551-b7bdc9230c55",
+    "_postman_id": "c82d0cbf-ff38-41ac-acfd-ae9904daee96",
     "name": "climate-control-integration",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
     "_exporter_id": "27475274"
@@ -60,10 +60,11 @@
                 "exec": [
                   "pm.test('Status is 200', () => pm.response.to.have.status(200));",
                   "const json = pm.response.json();",
-                  "pm.environment.set('access_token', json.access_token);",
-                  "pm.environment.set('refresh_token', json.refresh_token);"
+                  "pm.environment.set('access_token', json.access_token);"
                 ],
-                "type": "text/javascript"
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
               }
             }
           ],

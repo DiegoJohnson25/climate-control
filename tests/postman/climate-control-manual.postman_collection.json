@@ -47,10 +47,11 @@
               "script": {
                 "exec": [
                   "const json = pm.response.json();",
-                  "pm.environment.set('access_token', json.access_token);",
-                  "pm.environment.set('refresh_token', json.refresh_token);"
+                  "pm.environment.set('access_token', json.access_token);"
                 ],
-                "type": "text/javascript"
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
               }
             }
           ],
@@ -90,10 +91,11 @@
               "script": {
                 "exec": [
                   "const json = pm.response.json();",
-                  "pm.environment.set('access_token', json.access_token);",
-                  "pm.environment.set('refresh_token', json.refresh_token);"
+                  "pm.environment.set('access_token', json.access_token);"
                 ],
-                "type": "text/javascript"
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
               }
             }
           ],
@@ -108,10 +110,6 @@
                 "value": "application/json"
               }
             ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\"refresh_token\": \"{{refresh_token}}\"}"
-            },
             "url": {
               "raw": "{{base_url}}/auth/refresh",
               "host": [
