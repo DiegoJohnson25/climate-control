@@ -11,6 +11,8 @@ CREATE TABLE room_control_logs (
     control_source     TEXT CHECK (control_source IN ('manual_override', 'schedule', 'grace_period', 'none')),
     heater_cmd         SMALLINT CHECK (heater_cmd IN (0, 1)),
     humidifier_cmd     SMALLINT CHECK (humidifier_cmd IN (0, 1)),
+    deadband_temp      NUMERIC,
+    deadband_hum       NUMERIC,
     reading_count_temp SMALLINT,
     reading_count_hum  SMALLINT,
     schedule_period_id UUID

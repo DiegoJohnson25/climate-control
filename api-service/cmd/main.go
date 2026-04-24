@@ -9,6 +9,7 @@ import (
 	"github.com/DiegoJohnson25/climate-control/api-service/internal/config"
 	"github.com/DiegoJohnson25/climate-control/api-service/internal/connect"
 	"github.com/DiegoJohnson25/climate-control/api-service/internal/device"
+	"github.com/DiegoJohnson25/climate-control/api-service/internal/metricsdb"
 	"github.com/DiegoJohnson25/climate-control/api-service/internal/room"
 	"github.com/DiegoJohnson25/climate-control/api-service/internal/router"
 	"github.com/DiegoJohnson25/climate-control/api-service/internal/schedule"
@@ -24,7 +25,6 @@ func main() {
 	}
 
 	metricsDB, err := connect.Timescale(cfg.TimescaleUser, cfg.TimescalePassword, cfg.TimescaleDB)
-	_ = metricsDB // TODO: used when sensor history endpoints are implemented
 	if err != nil {
 		log.Fatalf("failed to connect to timescaledb: %v", err)
 	}
@@ -42,8 +42,10 @@ func main() {
 	authSvc := auth.NewService(userRepo, authRepo, cfg.JWTSecret, cfg.JWTAccessTTLMinutes, cfg.JWTRefreshTTLDays)
 	authHandler := auth.NewHandler(authSvc)
 
+	metricsRepo := metricsdb.NewRepository(metricsDB)
+
 	roomRepo := room.NewRepository(db)
-	roomSvc := room.NewService(roomRepo, rdb)
+	roomSvc := room.NewService(roomRepo, metricsRepo, rdb)
 	roomHandler := room.NewHandler(roomSvc)
 
 	deviceRepo := device.NewRepository(db)

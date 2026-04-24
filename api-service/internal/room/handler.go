@@ -3,6 +3,7 @@ package room
 import (
 	"errors"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/DiegoJohnson25/climate-control/api-service/internal/ctxkeys"
@@ -227,6 +228,83 @@ func (h *Handler) UpdateDesiredState(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, desiredStateResponse(ds))
+}
+
+// ---------------------------------------------------------------------------
+// Climate
+// ---------------------------------------------------------------------------
+
+func (h *Handler) GetClimate(c *gin.Context) {
+	userID := c.MustGet(ctxkeys.UserID).(uuid.UUID)
+
+	roomID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid room id"})
+		return
+	}
+
+	reading, err := h.svc.GetClimate(c.Request.Context(), roomID, userID)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": ErrNotFound.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+
+	c.JSON(http.StatusOK, reading)
+}
+
+func (h *Handler) GetClimateHistory(c *gin.Context) {
+	userID := c.MustGet(ctxkeys.UserID).(uuid.UUID)
+
+	roomID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid room id"})
+		return
+	}
+
+	window := c.Query("window")
+	if window != "" {
+		switch window {
+		case "1h", "6h", "24h", "7d":
+		default:
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid window: must be one of 1h, 6h, 24h, 7d"})
+			return
+		}
+	}
+
+	effectiveWindow := window
+	if effectiveWindow == "" {
+		effectiveWindow = "24h"
+	}
+
+	var density int
+	if raw := c.Query("density"); raw != "" {
+		n, parseErr := strconv.Atoi(raw)
+		if parseErr != nil || n <= 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid density: must be a positive integer"})
+			return
+		}
+		density = n
+	}
+
+	result, err := h.svc.GetClimateHistory(c.Request.Context(), roomID, userID, effectiveWindow, density)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": ErrNotFound.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"window":         effectiveWindow,
+		"bucket_seconds": result.BucketSeconds,
+		"points":         result.Points,
+	})
 }
 
 // ---------------------------------------------------------------------------

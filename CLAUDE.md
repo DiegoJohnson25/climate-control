@@ -2,7 +2,7 @@
 
 ## Project overview
 
-A distributed IoT climate control system built in Go. ESP32 relay devices publish sensor telemetry (temperature, humidity, air quality) via MQTT. A backend device-service ingests that telemetry, evaluates a bang-bang control loop per room, and publishes relay commands back to the devices. A REST API (api-service) lets users configure rooms, devices, schedules, and desired climate state. A React web client provides a dashboard for monitoring and control. A simulator service stands in for physical hardware, making the system fully demonstrable without any ESP32s.
+A distributed IoT climate control system built in Go. ESP32 relay devices publish sensor telemetry (temperature, humidity) via MQTT. A backend device-service ingests that telemetry, evaluates a bang-bang control loop per room, and publishes relay commands back to the devices. A REST API (api-service) lets users configure rooms, devices, schedules, and desired climate state. A React web client provides a dashboard for monitoring and control. A simulator service stands in for physical hardware, making the system fully demonstrable without any ESP32s.
 
 The architecture is designed to scale: api-service scales horizontally behind NGINX with no code changes (Redis-backed state, stateless request handling). device-service scales via Kafka partition ownership in Phase 7 — each room hashes to one partition, owned by exactly one instance. The Redis stream cache invalidation layer ensures all device-service instances stay in sync with api-service writes.
 
@@ -12,7 +12,7 @@ The project serves as a portfolio piece demonstrating distributed systems design
 
 ## Architecture summary
 
-**api-service** — Gin REST API. Owns all user-facing configuration: rooms, devices, schedules, desired state. Writes to PostgreSQL (appdb) via GORM. Publishes cache invalidation events to a Redis Stream on any state change that device-service needs to know about. JWT auth with Redis-backed refresh token rotation.
+**api-service** — Gin REST API. Owns all user-facing configuration: rooms, devices, schedules, desired state. Writes to PostgreSQL (appdb) via GORM. Publishes cache invalidation events to a Redis Stream on any state change that device-service needs to know about. JWT auth with Redis-backed refresh token rotation. Read-only TimescaleDB access via pgx for climate endpoints.
 
 **device-service** — Standalone Go binary. Minimal HTTP server on `:8081` for health checks only. Subscribes to MQTT telemetry (Phases 3–6) or Kafka (Phase 7), maintains an in-memory cache of room and device state, runs a bang-bang control loop per room, publishes actuator commands via MQTT, writes sensor readings and control logs to TimescaleDB. Consumes the Redis Stream from api-service to keep its cache in sync.
 
@@ -41,8 +41,9 @@ The project serves as a portfolio piece demonstrating distributed systems design
 - Phase 4a ✅ — CI pipeline, device-service health server, compose health checks, simulator profile
 - Phase 4b ✅ — reactive room model, environment model, time scaling, physical units
 - Phase 4c ✅ — desired state + schedule provisioning, teardown, demo.yaml 4-user topology
+- Phase 5a ✅ — `GET /rooms/:id/climate`, `GET /rooms/:id/climate/history`, Postman verified
 
-**Active branch:** none — clean main, about to start Phase 5a
+**Active branch:** `feat/nginx` — Phase 5b
 
 ---
 
@@ -51,7 +52,7 @@ The project serves as a portfolio piece demonstrating distributed systems design
 | Phase | Branch | Scope |
 |---|---|---|
 | 1–4c | — | Repo scaffold, full API, device-service, simulator, CI, reactive model, schedules | ✅ Done |
-| 5a | `feat/api-service-climate` | `GET /rooms/:id/climate`, `GET /rooms/:id/climate/history`, Postman verified |
+| 5a | `feat/api-service-climate` | `GET /rooms/:id/climate`, `GET /rooms/:id/climate/history`, Postman verified | ✅ Done |
 | 5b | `feat/nginx` | Single entry point, static file serving, API proxy via Docker DNS, horizontal scaling demonstrated, Postman environments updated |
 | 6a | `feat/client-scaffold` | Vite project, routing, auth flow, JWT handling, persistent nav, SWR setup |
 | 6b | `feat/client-rooms` | Dashboard room cards, room detail shell, overview tab, current state + control panel |
@@ -82,6 +83,7 @@ climate-control/
 │       ├── room/         # handler.go, service.go, repository.go, pg_errors.go, errors.go
 │       ├── device/       # handler.go, service.go, repository.go, pg_errors.go, errors.go
 │       ├── schedule/     # handler.go, service.go, repository.go, pg_errors.go, errors.go
+│       ├── metricsdb/    # repository.go — LatestClimate, ClimateHistory (read-only TimescaleDB)
 │       ├── router/       # router.go — route registration, middleware chain
 │       ├── health/       # health.go — plain function, no struct
 │       ├── ctxkeys/      # keys.go — context key constants, prevents circular imports
@@ -125,7 +127,8 @@ climate-control/
 │   ├── appdb/
 │   └── metricsdb/
 ├── docs/
-│   └── architecture/     # kafka.md, stream.md, auth.md, simulator.md, future-features.md
+│   └── architecture/     # kafka.md, stream.md, auth.md, simulator.md, device-service.md,
+│                         # future-features.md, client.md
 ├── tests/postman/
 ├── docker-compose.yml
 ├── go.work
@@ -340,7 +343,7 @@ types: `gorm:"type:integer[]"` on `pq.Int64Array` fields.
 All Go code follows `.claude/COMMENTING_STYLE.md`. Key rules:
 - Package comments in primary file, starting with "Package <n>."
 - Godoc on exported symbols that need them — start with symbol name, end with period.
-  Trivial constructors, self-documenting DTOs, descriptive error sentinels need no comment.
+- Trivial constructors, self-documenting DTOs, descriptive error sentinels need no comment.
 - File-level section breaks: three-line 75-dash bars with title case label.
 - No structural dividers inside functions.
 - `// TODO Phase N:` for phase-tagged items, always with explanation.
@@ -404,23 +407,35 @@ POST   /api/v1/schedules/:id/periods
 GET    /api/v1/schedules/:id/periods
 PUT    /api/v1/schedule-periods/:id
 DELETE /api/v1/schedule-periods/:id
-```
 
-### Phase 5a (planned)
-
-```
 GET    /api/v1/rooms/:id/climate
-GET    /api/v1/rooms/:id/climate/history?window=1h|6h|24h|7d
+GET    /api/v1/rooms/:id/climate/history?window=1h|6h|24h|7d[&density=N]
 ```
 
-`/climate` — current snapshot: latest averaged readings, last control source,
-last commanded actuator states. Sourced from most recent `room_control_logs` row.
+`/climate` — current snapshot sourced from the most recent `room_control_logs` row.
+Returns `null` body (200) if the room has no data yet. Fields: `time`, `avg_temp`,
+`avg_hum`, `mode`, `target_temp`, `target_hum`, `control_source`, `heater_cmd`
+(bool or null), `humidifier_cmd` (bool or null), `deadband_temp`, `deadband_hum`.
 
-`/climate/history` — time series. Response: parallel arrays
-`{ timestamps, temp, humidity, heater_duty, humidifier_duty }`.
-Server picks resolution internally: 1h → raw, 6h → 5min buckets,
-24h → 15min buckets, 7d → 1hr buckets. Source: `room_control_logs`
-(already averaged, already has control context).
+`/climate/history` — array of time-bucketed objects from `room_control_logs`.
+Response shape:
+```json
+{
+  "window": "24h",
+  "bucket_seconds": 600,
+  "points": [{ "time", "avg_temp", "avg_hum", "heater_duty", "humidifier_duty",
+               "target_temp", "target_hum", "deadband_temp", "deadband_hum" }]
+}
+```
+`window` defaults to `"24h"` if omitted. Optional `?density=N` overrides the
+target point count (must be a positive integer). Bucket size targets
+`DefaultDensity = 120` data points per window, rounded to the nearest value on a
+fixed ladder `[30, 60, 120, 300, 600, 900, 1800, 3600, 7200, 10800, 21600]`.
+Duty fields are `AVG(heater_cmd)` / `AVG(humidifier_cmd)` — 0.0–1.0 fraction of
+ticks the actuator was on within the bucket. `deadband_temp` / `deadband_hum` are
+null when no target is set for that type (deadband is only meaningful alongside a
+target). Null buckets are returned as-is — gaps in the chart indicate offline
+devices or stale readings.
 
 ---
 
@@ -512,12 +527,53 @@ The Kafka bridge handles telemetry only.
 
 ---
 
+## TimescaleDB schema (metricsdb)
+
+```sql
+CREATE TABLE sensor_readings (
+    time      TIMESTAMPTZ NOT NULL,
+    sensor_id UUID NOT NULL,
+    room_id   UUID,
+    value     NUMERIC NOT NULL,
+    raw_value NUMERIC NOT NULL
+);
+
+CREATE TABLE room_control_logs (
+    time               TIMESTAMPTZ NOT NULL,
+    room_id            UUID NOT NULL,
+    avg_temp           NUMERIC,
+    avg_hum            NUMERIC,
+    mode               TEXT CHECK (mode IN ('OFF', 'AUTO')),
+    target_temp        NUMERIC,
+    target_hum         NUMERIC,
+    control_source     TEXT CHECK (control_source IN ('manual_override', 'schedule', 'grace_period', 'none')),
+    heater_cmd         SMALLINT CHECK (heater_cmd IN (0, 1)),
+    humidifier_cmd     SMALLINT CHECK (humidifier_cmd IN (0, 1)),
+    deadband_temp      NUMERIC,
+    deadband_hum       NUMERIC,
+    reading_count_temp SMALLINT,
+    reading_count_hum  SMALLINT,
+    schedule_period_id UUID
+);
+```
+
+Both tables are TimescaleDB hypertables partitioned by `time` with 1-day chunks.
+`sensor_readings.room_id` is snapshotted at write time — accurate historical metrics
+even after device reassignment. `heater_cmd`/`humidifier_cmd` are SMALLINT not
+BOOLEAN — `AVG()` produces a duty cycle fraction without casting.
+`deadband_temp`/`deadband_hum` are snapshotted from the room cache at write time —
+preserves historical context when deadbands change. api-service reads
+`room_control_logs` for climate endpoints; `sensor_readings` is currently write-only
+from device-service.
+
+---
+
 ## Simulator design
 
 See `docs/architecture/simulator.md` for full detail. Key points:
 
 **Invocation:** simulator-service has `profiles: ["simulation"]` in docker-compose —
-excluded from normal `docker compose up`. Use `make simulator-start SIM=<name>` or
+excluded from normal `docker compose up`. Use `make simulator-start SIM=<n>` or
 `make demo` (starts stack + default simulation). `docker compose run` used for teardown.
 
 **Config system:** four template files (`rooms.yaml`, `devices.yaml`,
@@ -575,7 +631,7 @@ Base physical constants defined once in `internal/config/config.go`:
 | `baseThermalMassHumidity` | 325 | abstract moisture units |
 | `baseConductanceTemperature` | 100 | W/°C |
 | `baseConductanceHumidity` | 0.001 | %RH/s per %RH |
-| `baseRateTemperature` | 1000 | W |
+| `baseRateTemperature` | 1,000 | W |
 | `baseRateHumidity` | 0.009 | %RH/s |
 
 Templates carry only scale multipliers — `thermal_mass_scale` and `conductance_scale`
@@ -670,9 +726,10 @@ via `make mosquitto-passwd` equivalent — not committed to repo.
 
 ## Web client design (Phase 6)
 
+See `docs/architecture/client.md` for full detail. Key points:
+
 **Stack:** React 19 + JavaScript + Vite + SWR + shadcn/ui + Tailwind + Recharts +
-React Router. No TypeScript (overhead not justified for this scope). No Redux
-(SWR covers server state; local UI state via `useState` is sufficient).
+React Router. No TypeScript. No Redux.
 
 **Navigation structure:**
 ```
@@ -685,21 +742,26 @@ Login → Dashboard (room cards grid)
          └─→ Devices page        (all devices, inline assignment/unassignment)
 ```
 
-Persistent top nav: Dashboard and Devices accessible from anywhere. Room detail
-always one click from dashboard. Max depth: three clicks from login to any data.
+**Overview tab:** side-by-side panels. Left: live readings (temperature, humidity),
+actuator state indicators, control source, last updated. Right: control panel —
+mode selector (OFF/AUTO), target temp/humidity, manual override toggle with duration.
 
-**Overview tab layout:** side-by-side panels. Left: live readings (temperature,
-humidity, air quality), actuator state indicators, control source, last updated.
-Right: control panel — mode selector (OFF/AUTO), target temp/humidity, manual
-override toggle with duration. Both panels visible simultaneously — user watches
-readings while adjusting controls.
+**History tab:** Recharts line chart. `connectNulls={false}` — gaps mean device
+offline. Target band overlay (`target ± deadband`) rendered as dashed lines.
+Heater/humidifier duty cycle on secondary axis or separate panel. Window selector:
+`1h`, `6h`, `24h`, `7d` buttons, default `24h`. Re-fetches on window change.
 
-**SWR polling:** dashboard and overview tab poll every 30s. History tab fetches
-on tab focus and window selector change — not continuous polling.
+**SWR polling:**
+- Dashboard + overview tab: poll every 30s
+- History tab: poll every 60s + `revalidateOnFocus: true`. Full re-fetch on each
+  poll — avoids mixing raw and bucketed data at the chart edge.
 
 **Auth:** JWT access token in memory (not localStorage). Refresh token in httpOnly
-cookie. SWR handles 401 → trigger refresh → retry. On logout clear token and
-redirect to login.
+cookie. SWR intercepts 401 → trigger refresh → retry. Silent re-auth on page load.
+
+**Capability-aware rendering:** client uses `GET /rooms/:id` sensor/actuator list
+to determine which controls and indicators to render. Distinguishes structural nulls
+(no humidifier) from transient nulls (humidifier exists, no recent reading).
 
 ---
 
@@ -719,8 +781,8 @@ No instance enumeration in nginx.conf — scaling via `docker compose up --scale
 api-service=N` requires no config change. NGINX does not know or care how many
 instances exist.
 
-Postman environments updated in Phase 5b to target NGINX port instead of
-api-service directly. Direct api-service environment retained for debugging.
+Postman environments: `nginx` environment targets NGINX port (default 80).
+Direct `manual` environment retained for debugging against api-service directly.
 
 ---
 

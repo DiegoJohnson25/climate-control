@@ -32,6 +32,10 @@ type SensorReading struct {
 // HeaterCmd and HumidifierCmd are nullable — null indicates the room has no device
 // with that actuator type. 0 = off, 1 = on.
 //
+// DeadbandTemp and DeadbandHum are null when no target is set for the corresponding
+// type — they are only meaningful alongside a target and are always populated as a
+// pair with TargetTemp and TargetHum respectively.
+//
 // ReadingCountTemp and ReadingCountHum are the number of fresh readings that
 // contributed to AvgTemp and AvgHum respectively. Null if no readings were available.
 //
@@ -47,6 +51,8 @@ type ControlLogEntry struct {
 	ControlSource    string
 	HeaterCmd        *int16
 	HumidifierCmd    *int16
+	DeadbandTemp     *float64
+	DeadbandHum      *float64
 	ReadingCountTemp *int16
 	ReadingCountHum  *int16
 	SchedulePeriodID *uuid.UUID
@@ -100,8 +106,9 @@ func (r *Repository) WriteControlLogEntry(ctx context.Context, entry ControlLogE
 		`INSERT INTO room_control_logs (
 			time, room_id, avg_temp, avg_hum, mode, target_temp, target_hum,
 			control_source, heater_cmd, humidifier_cmd,
+			deadband_temp, deadband_hum,
 			reading_count_temp, reading_count_hum, schedule_period_id
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
 		entry.Time,
 		entry.RoomID,
 		entry.AvgTemp,
@@ -112,6 +119,8 @@ func (r *Repository) WriteControlLogEntry(ctx context.Context, entry ControlLogE
 		entry.ControlSource,
 		entry.HeaterCmd,
 		entry.HumidifierCmd,
+		entry.DeadbandTemp,
+		entry.DeadbandHum,
 		entry.ReadingCountTemp,
 		entry.ReadingCountHum,
 		entry.SchedulePeriodID,

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/DiegoJohnson25/climate-control/api-service/internal/events"
+	"github.com/DiegoJohnson25/climate-control/api-service/internal/metricsdb"
 	"github.com/DiegoJohnson25/climate-control/api-service/internal/models"
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
@@ -24,12 +25,13 @@ const (
 )
 
 type Service struct {
-	rooms *Repository
-	rdb   *redis.Client
+	rooms   *Repository
+	metrics *metricsdb.Repository
+	rdb     *redis.Client
 }
 
-func NewService(rooms *Repository, rdb *redis.Client) *Service {
-	return &Service{rooms: rooms, rdb: rdb}
+func NewService(rooms *Repository, metrics *metricsdb.Repository, rdb *redis.Client) *Service {
+	return &Service{rooms: rooms, metrics: metrics, rdb: rdb}
 }
 
 func (s *Service) List(ctx context.Context, userID uuid.UUID) ([]models.Room, error) {
@@ -105,6 +107,25 @@ type UpdateDesiredStateInput struct {
 	TargetTemp          *float64
 	TargetHum           *float64
 	ManualOverrideUntil *time.Time
+}
+
+// GetClimate returns the most recent climate snapshot for a room the user owns.
+// Returns nil, nil if the room has no data yet.
+func (s *Service) GetClimate(ctx context.Context, roomID, userID uuid.UUID) (*metricsdb.ClimateReading, error) {
+	if _, err := s.rooms.GetByIDAndUserID(ctx, roomID, userID); err != nil {
+		return nil, err
+	}
+	return s.metrics.LatestClimate(ctx, roomID)
+}
+
+// GetClimateHistory returns time-bucketed climate data for a room the user owns.
+// Window and density are passed through to the repository unchanged; both default
+// inside the repository when empty or zero.
+func (s *Service) GetClimateHistory(ctx context.Context, roomID, userID uuid.UUID, window string, density int) (metricsdb.ClimateHistoryResult, error) {
+	if _, err := s.rooms.GetByIDAndUserID(ctx, roomID, userID); err != nil {
+		return metricsdb.ClimateHistoryResult{}, err
+	}
+	return s.metrics.ClimateHistory(ctx, roomID, window, density)
 }
 
 // UpdateDesiredState validates capability requirements and persists the new state.
