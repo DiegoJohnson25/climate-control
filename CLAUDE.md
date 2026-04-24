@@ -12,17 +12,17 @@ The project serves as a portfolio piece demonstrating distributed systems design
 
 ## Architecture summary
 
-**api-service** — Gin REST API. Owns all user-facing configuration: rooms, devices, schedules, desired state. Writes to PostgreSQL (appdb) via GORM. Publishes cache invalidation events to a Redis Stream on any state change that device-service needs to know about. JWT auth with Redis-backed refresh token rotation. Read-only TimescaleDB access via pgx for climate endpoints.
+**api-service** — Gin REST API. Owns all user-facing configuration: rooms, devices, schedules, desired state. Writes to PostgreSQL (appdb) via GORM. Publishes cache invalidation events to a Redis Stream on any state change that device-service needs to know about. JWT auth with Redis-backed refresh token rotation. Refresh token stored in httpOnly cookie — not in response body. Read-only TimescaleDB access via pgx for climate endpoints.
 
 **device-service** — Standalone Go binary. Minimal HTTP server on `:8081` for health checks only. Subscribes to MQTT telemetry (Phases 3–6) or Kafka (Phase 7), maintains an in-memory cache of room and device state, runs a bang-bang control loop per room, publishes actuator commands via MQTT, writes sensor readings and control logs to TimescaleDB. Consumes the Redis Stream from api-service to keep its cache in sync.
 
-**simulator-service** — Provisions simulated users, rooms, devices, desired states, and schedules via the api-service REST API. Publishes realistic sensor telemetry via MQTT. Reacts to actuator commands — room temperature and humidity evolve based on active actuator contributions and passive return-to-ambient. Allows the full system to be demonstrated without physical hardware. Started via `docker compose --profile simulation` or `make simulator-start`.
+**simulator-service** — Provisions simulated users, rooms, devices, desired states, and schedules via the api-service REST API. Publishes realistic sensor telemetry via MQTT. Reacts to actuator commands — room temperature and humidity evolve based on active actuator contributions and passive return-to-ambient. Allows the full system to be demonstrated without physical hardware. Started via `make simulator-start SIM=<name>` or `make demo`.
 
 **mqtt-bridge** — New service added in Phase 7. Subscribes to Mosquitto telemetry, resolves hw_id to room_id, and produces to Kafka. The only service that talks to Mosquitto for telemetry in Phase 7 — device-service no longer subscribes to Mosquitto directly.
 
 **web-client** — React SPA (Phase 6). Served as static files by NGINX. Consumes the api-service REST API directly via NGINX proxy. Dashboard showing room climate state, control panel, history charts, schedule management, device management.
 
-**NGINX** — Single entry point (Phase 5). Serves React static files. Proxies `/api` to api-service via Docker DNS round-robin load balancing. TLS termination point.
+**NGINX** — Single entry point (Phase 5b). Serves React static files from `web-client/dist`. Proxies `/api/` to api-service via Docker DNS round-robin load balancing. api-service port 8080 is not exposed on the host — all traffic enters via NGINX on port 80.
 
 **Infrastructure:** PostgreSQL (appdb), TimescaleDB (metricsdb), Redis, Mosquitto MQTT broker, Apache Kafka (Phase 7), all containerised via Docker Compose.
 
@@ -42,8 +42,9 @@ The project serves as a portfolio piece demonstrating distributed systems design
 - Phase 4b ✅ — reactive room model, environment model, time scaling, physical units
 - Phase 4c ✅ — desired state + schedule provisioning, teardown, demo.yaml 4-user topology
 - Phase 5a ✅ — `GET /rooms/:id/climate`, `GET /rooms/:id/climate/history`, Postman verified
+- Phase 5b ✅ — NGINX reverse proxy, static file serving, API proxy, horizontal scaling verified, auth cookie rewrite
 
-**Active branch:** `feat/nginx` — Phase 5b
+**Active branch:** `feat/client-scaffold` — Phase 6a
 
 ---
 
@@ -53,7 +54,7 @@ The project serves as a portfolio piece demonstrating distributed systems design
 |---|---|---|
 | 1–4c | — | Repo scaffold, full API, device-service, simulator, CI, reactive model, schedules | ✅ Done |
 | 5a | `feat/api-service-climate` | `GET /rooms/:id/climate`, `GET /rooms/:id/climate/history`, Postman verified | ✅ Done |
-| 5b | `feat/nginx` | Single entry point, static file serving, API proxy via Docker DNS, horizontal scaling demonstrated, Postman environments updated |
+| 5b | `feat/nginx` | NGINX reverse proxy, static file serving, API proxy, horizontal scaling, auth cookie rewrite | ✅ Done |
 | 6a | `feat/client-scaffold` | Vite project, routing, auth flow, JWT handling, persistent nav, SWR setup |
 | 6b | `feat/client-rooms` | Dashboard room cards, room detail shell, overview tab, current state + control panel |
 | 6c | `feat/client-history` | Climate history chart consuming 5a endpoints |
@@ -117,12 +118,13 @@ climate-control/
 │       ├── provisioning/ # provisioning.go — bootstrap, teardown, identity generation
 │       └── simulator/    # simulator.go, room_state.go, model.go
 ├── web-client/           # Phase 6 — Vite + React SPA
+│   └── dist/             # Build output served by NGINX — index.html placeholder until Phase 6
 ├── mqtt-bridge/          # Phase 7 — MQTT → Kafka bridge service
 ├── deployments/
 │   ├── docker-compose.services.yml
 │   ├── docker-compose.prod.yml
 │   ├── mosquitto/        # mosquitto.conf, passwd, acl
-│   └── nginx/nginx.conf
+│   └── nginx/nginx.conf  # NGINX config — upstream, rate limiting, static serving, SPA fallback
 ├── migrations/
 │   ├── appdb/
 │   └── metricsdb/
@@ -193,6 +195,7 @@ climate-control/
 | Redis | Refresh tokens, rate limiting, cache invalidation stream — host port 6379 |
 | golang-migrate | Schema migrations — auto-run on `docker compose up` |
 | Docker Compose | Container orchestration |
+| NGINX | Reverse proxy, static file serving — port 80 |
 
 ### Messaging
 
@@ -206,7 +209,6 @@ climate-control/
 | Technology | Purpose |
 |---|---|
 | Newman + Postman | API integration and smoke tests |
-| NGINX | Reverse proxy, static file serving, TLS termination — Phase 5 |
 | GitHub Actions | CI — build/vet all Go services, Docker Compose stack startup verification |
 
 ---
@@ -264,6 +266,9 @@ SIMULATOR_SIMULATION=default
 Internal Docker ports are always hardcoded in connection strings — env var ports are
 host-machine mappings only. `host=postgres port=5432`, `host=timescaledb port=5432`,
 `host=redis port=6379`, `host=mosquitto port=1883`, `http://api-service:8080`.
+
+api-service port 8080 is internal only — not published on the host. All external
+traffic enters via NGINX on port 80.
 
 ---
 
@@ -337,6 +342,19 @@ types: `gorm:"type:integer[]"` on `pq.Int64Array` fields.
 - Logout swallows `ErrTokenNotFound`
 - PUT = full replacement of all mutable fields
 - PATCH reserved for targeted state transitions (e.g. schedule activate/deactivate)
+- Refresh token transported as httpOnly cookie — never in request/response body
+
+### Auth cookie conventions
+
+- Cookie name: `refresh_token`
+- `httpOnly: true` — inaccessible to JavaScript
+- `secure: false` — plain HTTP in development
+  - TODO: set Secure to true if TLS is configured
+- `path: /` — sent on all requests to the same origin
+- `maxAge` matches `JWT_REFRESH_TTL_DAYS` — computed in `NewHandler` as `days * 24 * 60 * 60`
+- Login: sets cookie, returns only `access_token` in body
+- Refresh: reads cookie, sets new cookie, returns only `access_token` in body
+- Logout: reads cookie, clears cookie (maxAge -1), returns confirmation message
 
 ### Commenting style
 
@@ -477,6 +495,64 @@ devices or stale readings.
 
 ---
 
+## NGINX design
+
+Single entry point for the entire stack. All traffic enters via NGINX on port 80.
+api-service port 8080 is internal to the Docker network — not published on the host.
+
+```nginx
+upstream api {
+    server api-service:8080;  # Docker DNS resolves to all instances
+}
+```
+
+**Routing:**
+- `location /api/` — proxied to api-service. No trailing slash on `proxy_pass` —
+  preserves the full URI including the `/api/` prefix.
+- `location /` — static files from `/usr/share/nginx/html` (bind-mounted from
+  `web-client/dist`). `try_files $uri $uri/ /index.html` for React Router SPA fallback.
+
+**Rate limiting:** `limit_req_zone $binary_remote_addr zone=api:10m rate=30r/s`
+with `burst=60 nodelay`. Intentionally loose — framework for future tuning, not
+a strict guard. Tune before any public deployment.
+
+**Cache headers:**
+- `.js` and `.css` assets: `Cache-Control: public, immutable`, `expires 1y` —
+  safe because Vite content-hashes asset filenames on every build.
+- Everything else (including `index.html`): `Cache-Control: no-cache` — always
+  revalidated, never stale.
+
+**Proxy headers forwarded:** `X-Real-IP`, `X-Forwarded-For`, `X-Forwarded-Proto`, `Host`.
+
+**Horizontal scaling:**
+- Scale via `make up-scaled API=N` or `make scale-api API=N`.
+- Docker DNS round-robins across all api-service instances automatically — no
+  nginx.conf changes needed.
+- NGINX resolves upstream DNS once at startup. Instances added after NGINX starts
+  will not receive traffic until NGINX restarts. Always start with the desired
+  instance count using `make up-scaled` — do not scale up after the fact.
+- `make scale-api` force-recreates both api-service and NGINX together to ensure
+  DNS is always fresh. Infrastructure services are untouched (`--no-deps`).
+
+**Makefile targets:**
+- `make up` — single api-service instance, idempotent
+- `make up-scaled [API=N]` — N instances (default 2), always resyncs NGINX
+- `make scale-api [API=N]` — rescale running stack, resyncs NGINX, no infra restart
+
+---
+
+## api-service design
+
+**Auth handler (`auth/handler.go`):**
+- `NewHandler(svc *Service, refreshTTLDays int)` — TTL passed in from `main.go`
+  via `cfg.JWTRefreshTTLDays`, stored as `refreshTTLSecs` (converted at construction)
+- `setRefreshCookie` / `clearRefreshCookie` — unexported helpers, called by
+  Login, Refresh, and Logout handlers
+- Postman collections send no refresh token in request body — cookie is managed
+  automatically by Postman's cookie jar within a collection run
+
+---
+
 ## Device-service design
 
 See `docs/architecture/device-service.md` for full detail. Key points:
@@ -573,8 +649,9 @@ from device-service.
 See `docs/architecture/simulator.md` for full detail. Key points:
 
 **Invocation:** simulator-service has `profiles: ["simulation"]` in docker-compose —
-excluded from normal `docker compose up`. Use `make simulator-start SIM=<n>` or
-`make demo` (starts stack + default simulation). `docker compose run` used for teardown.
+excluded from normal `docker compose up`. Use `make simulator-start SIM=<n>`.
+`make demo` starts the demo simulation only — stack must already be running via
+`make up`. `docker compose run` used for teardown.
 
 **Config system:** four template files (`rooms.yaml`, `devices.yaml`,
 `desired_states.yaml`, `schedules.yaml`) and simulation files that compose them into
@@ -757,32 +834,12 @@ Heater/humidifier duty cycle on secondary axis or separate panel. Window selecto
   poll — avoids mixing raw and bucketed data at the chart edge.
 
 **Auth:** JWT access token in memory (not localStorage). Refresh token in httpOnly
-cookie. SWR intercepts 401 → trigger refresh → retry. Silent re-auth on page load.
+cookie — set by api-service on login/refresh, cleared on logout. SWR intercepts
+401 → trigger refresh → retry. Silent re-auth on page load.
 
 **Capability-aware rendering:** client uses `GET /rooms/:id` sensor/actuator list
 to determine which controls and indicators to render. Distinguishes structural nulls
 (no humidifier) from transient nulls (humidifier exists, no recent reading).
-
----
-
-## NGINX design (Phase 5)
-
-Single entry point for the entire stack. React static files served directly.
-`/api` proxied to api-service via Docker service DNS name — Docker round-robins
-across all running api-service instances automatically.
-
-```nginx
-upstream api {
-    server api-service:8080;  # Docker DNS resolves to all instances
-}
-```
-
-No instance enumeration in nginx.conf — scaling via `docker compose up --scale
-api-service=N` requires no config change. NGINX does not know or care how many
-instances exist.
-
-Postman environments: `nginx` environment targets NGINX port (default 80).
-Direct `manual` environment retained for debugging against api-service directly.
 
 ---
 
