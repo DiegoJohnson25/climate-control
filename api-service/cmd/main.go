@@ -40,7 +40,7 @@ func main() {
 
 	authRepo := auth.NewRepository(rdb, cfg.JWTRefreshTTLDays)
 	authSvc := auth.NewService(userRepo, authRepo, cfg.JWTSecret, cfg.JWTAccessTTLMinutes, cfg.JWTRefreshTTLDays)
-	authHandler := auth.NewHandler(authSvc)
+	authHandler := auth.NewHandler(authSvc, cfg.JWTRefreshTTLDays)
 
 	metricsRepo := metricsdb.NewRepository(metricsDB)
 
