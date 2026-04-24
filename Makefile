@@ -9,10 +9,24 @@ CURRENT_SIM         = $(shell docker inspect $(SIMULATOR_CONTAINER) \
                         --format "{{range .Args}}{{.}} {{end}}" 2>/dev/null | \
                         grep -o '\-\-simulation=[^ ]*' | cut -d= -f2)
 
+# Number of api-service instances for scaled targets.
+# Override at the command line: make up-scaled API=3
+API ?= 2
+
 # ── Project lifecycle ─────────────────────────────────────────────────────────
 
+# Start the full stack — single api-service instance.
+# Safe to run multiple times — existing containers are left alone.
 up:
 	$(COMPOSE_ALL) up -d
+
+# Start the full stack with multiple api-service instances.
+# Always restarts api-service and NGINX together so DNS resolution is fresh.
+# Usage: make up-scaled
+#        make up-scaled API=3
+up-scaled:
+	$(COMPOSE_ALL) up -d --scale api-service=$(API)
+	$(COMPOSE_ALL) up -d --no-deps --force-recreate --scale api-service=$(API) api-service nginx
 
 down:
 	$(COMPOSE_ALL) --profile simulation down
@@ -23,8 +37,8 @@ down-hard:
 rebuild:
 	$(COMPOSE_ALL) up --build -d
 
+# Start the demo simulation. Requires the stack to be running (make up).
 demo:
-	$(MAKE) up
 	$(MAKE) simulator-start SIM=demo
 
 # ── Infrastructure ────────────────────────────────────────────────────────────
@@ -41,7 +55,7 @@ infra-down-hard:
 # ── Service rebuild ───────────────────────────────────────────────────────────
 
 rebuild-api:
-	$(COMPOSE_ALL) up --build -d api-service
+	$(COMPOSE_ALL) up --build -d --no-deps --force-recreate api-service nginx
 
 rebuild-device:
 	$(COMPOSE_ALL) up --build -d device-service
@@ -51,6 +65,15 @@ restart-device:
 
 rebuild-simulator:
 	$(COMPOSE_ALL) --profile simulation up --build -d simulator-service
+
+# ── Scaling ───────────────────────────────────────────────────────────────────
+
+# Rescale api-service and restart NGINX so it resolves fresh DNS.
+# Infrastructure services (postgres, redis, timescaledb, mosquitto) are untouched.
+# Usage: make scale-api
+#        make scale-api API=3
+scale-api:
+	$(COMPOSE_ALL) up -d --no-deps --force-recreate --scale api-service=$(API) api-service nginx
 
 # ── Debug ─────────────────────────────────────────────────────────────────────
 
@@ -93,6 +116,9 @@ logs-api:
 logs-device:
 	$(COMPOSE_ALL) logs -f device-service
 
+logs-nginx:
+	$(COMPOSE_ALL) logs -f nginx
+
 logs-simulator:
 	$(COMPOSE_ALL) logs -f simulator-service
 
@@ -112,6 +138,9 @@ shell-api:
 
 shell-device:
 	$(COMPOSE_ALL) exec device-service sh
+
+shell-nginx:
+	$(COMPOSE_ALL) exec nginx sh
 
 shell-simulator:
 	$(COMPOSE_ALL) exec simulator-service sh
@@ -198,7 +227,7 @@ simulator-switch-hard:
 # Teardown simulation data — deletes all provisioned users via API cascade
 # Stops simulator first if running. Uses current simulation if SIM not specified.
 # Usage: make simulator-teardown
-# Usage: make simulator-teardown SIM=load-test
+#        make simulator-teardown SIM=load-test
 simulator-teardown:
 	$(COMPOSE_ALL) stop simulator-service 2>/dev/null || true
 	$(COMPOSE_ALL) run --rm simulator-service ./bin/simulator-service \
