@@ -50,6 +50,10 @@ func Setup(
 	protected.GET("/rooms/:id/desired-state", roomHandler.GetDesiredState)
 	protected.PUT("/rooms/:id/desired-state", roomHandler.UpdateDesiredState)
 
+	// Climate
+	protected.GET("/rooms/:id/climate", roomHandler.GetClimate)
+	protected.GET("/rooms/:id/climate/history", roomHandler.GetClimateHistory)
+
 	// Devices
 	protected.GET("/devices", deviceHandler.List)
 	protected.POST("/devices", deviceHandler.Create)
