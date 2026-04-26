@@ -109,3 +109,12 @@ services:
     depends_on:
       api-service:
         condition: service_healthy
+
+  mockup:
+    image: nginx:alpine
+    profiles: ["mockup"]
+    ports:
+      - "8090:80"
+    volumes:
+      - ./deployments/mockup/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./web-client/mockup:/usr/share/nginx/html:ro

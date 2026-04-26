@@ -1,0 +1,185 @@
+/* Climate Control — component styles layered over the base design tokens. */
+@import url("colors_and_type.css");
+
+:root {
+  /* Source-badge accents for states beyond the neutral palette.
+     --cc-hold: warm amber, distinct from heat (#D97706) and danger (#DC2626).
+     --cc-grace: cool slate, reads as a muted transitional state. */
+  --cc-hold:        #A16207;
+  --cc-hold-tint:   rgba(161, 98, 7, 0.10);
+  --cc-hold-fg:     #713F12;
+
+  --cc-grace:       #64748B;
+  --cc-grace-tint:  rgba(100, 116, 139, 0.10);
+  --cc-grace-fg:    #334155;
+}
+
+/* Full-width page baseline */
+.cc { min-height: 100vh; background: var(--cc-bg); }
+
+/* Kebab / icon buttons (square, subtle) */
+.cc-iconbtn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; border-radius: 6px; border: 1px solid transparent;
+  background: transparent; color: var(--cc-fg-2);
+  cursor: pointer; transition: background .12s, border-color .12s, color .12s;
+}
+.cc-iconbtn:hover { background: var(--cc-surface-2); color: var(--cc-fg); }
+.cc-iconbtn--active { background: var(--cc-surface-2); border-color: var(--cc-border-strong); }
+.cc-iconbtn--danger { color: var(--cc-danger-fg); }
+.cc-iconbtn--danger:hover { background: var(--cc-danger-tint); color: var(--cc-danger); }
+
+/* ToggleDot — used for capability row on/off */
+.cc-togdot {
+  width: 18px; height: 18px; border-radius: 50%;
+  border: 1.5px solid var(--cc-border-strong); background: var(--cc-surface);
+  cursor: pointer; flex-shrink: 0; padding: 0;
+  transition: background .12s, border-color .12s, box-shadow .12s;
+  position: relative;
+}
+.cc-togdot:hover { border-color: var(--cc-fg-3); }
+.cc-togdot--on { background: var(--cc-success); border-color: var(--cc-success); }
+.cc-togdot--on::after {
+  content: ""; position: absolute; inset: 3px; border-radius: 50%; background: #fff; transform: scale(0.5);
+}
+.cc-togdot--disabled { cursor: not-allowed; background: var(--cc-neutral-100); border-color: var(--cc-border); }
+.cc-togdot--disabled:hover { border-color: var(--cc-border); }
+
+/* Deadband pill — clickable */
+.cc-dbpill {
+  display: inline-flex; align-items: center; gap: 4px;
+  border: 1px dashed var(--cc-border-strong); background: transparent;
+  padding: 2px 10px; border-radius: 999px; cursor: pointer;
+  font-family: var(--cc-font-mono); font-size: 11px; color: var(--cc-fg-3);
+  transition: color .12s, border-color .12s, background .12s;
+}
+.cc-dbpill:hover { color: var(--cc-fg); border-color: var(--cc-fg-3); background: var(--cc-surface-2); }
+
+/* Day chips (M T W T F S S) */
+.cc-daychip {
+  width: 26px; height: 26px; border-radius: 5px; border: 1px solid var(--cc-border-strong);
+  background: var(--cc-surface); color: var(--cc-fg-3);
+  font-family: var(--cc-font-mono); font-size: 11px; font-weight: 500;
+  display: inline-flex; align-items: center; justify-content: center;
+  cursor: pointer; padding: 0; transition: background .12s, color .12s, border-color .12s;
+}
+.cc-daychip--on { background: var(--cc-primary); color: var(--cc-primary-fg); border-color: var(--cc-primary); }
+.cc-daychip--read { width: 20px; height: 20px; font-size: 10px; cursor: default; }
+.cc-daychip:disabled { cursor: default; }
+
+/* Segmented (inline-flex, never stretches) */
+.cc-seg {
+  display: inline-flex; border: 1px solid var(--cc-border-strong);
+  border-radius: 6px; background: var(--cc-surface); padding: 2px; gap: 2px;
+}
+.cc-seg button {
+  background: transparent; border: none; padding: 4px 12px; border-radius: 4px;
+  font-family: var(--cc-font-mono); font-size: 12px; letter-spacing: .04em; font-weight: 500;
+  color: var(--cc-fg-2); cursor: pointer; height: 26px;
+}
+.cc-seg button.is-on { background: var(--cc-primary); color: var(--cc-primary-fg); }
+.cc-seg--disabled { opacity: .45; pointer-events: none; }
+
+/* Input wrappers with unit suffix */
+.cc-input-unit {
+  position: relative; display: inline-block;
+}
+.cc-input-unit input { padding-right: 34px; text-align: left; }
+.cc-input-unit .unit {
+  position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+  font-family: var(--cc-font-mono); font-size: 11px; color: var(--cc-fg-3);
+  pointer-events: none; letter-spacing: .02em;
+}
+
+/* Tooltip */
+.cc-tt {
+  position: absolute; z-index: 50; padding: 6px 10px;
+  background: var(--cc-neutral-900); color: #F5F5F4; font-size: 12px;
+  border-radius: 5px; font-family: var(--cc-font-sans);
+  white-space: nowrap; pointer-events: none;
+  box-shadow: var(--cc-shadow-md);
+}
+
+/* KebabMenu popover */
+.cc-pop {
+  position: absolute; z-index: 40; background: var(--cc-surface);
+  border: 1px solid var(--cc-border-strong); border-radius: 8px;
+  box-shadow: var(--cc-shadow-lg); padding: 6px; min-width: 180px;
+}
+.cc-pop button {
+  display: block; width: 100%; text-align: left; padding: 8px 10px;
+  border: none; background: transparent; font-size: 13px; color: var(--cc-fg);
+  border-radius: 4px; cursor: pointer;
+}
+.cc-pop button:hover { background: var(--cc-surface-2); }
+.cc-pop button.danger { color: var(--cc-danger); }
+.cc-pop button.danger:hover { background: var(--cc-danger-tint); }
+.cc-pop hr { border: none; border-top: 1px solid var(--cc-divider); margin: 4px 0; }
+
+/* Modal */
+.cc-modal-bg {
+  position: fixed; inset: 0; z-index: 100;
+  background: rgba(20, 19, 15, .40);
+  display: flex; align-items: center; justify-content: center; padding: 24px;
+}
+.cc-modal {
+  background: var(--cc-surface); border: 1px solid var(--cc-border);
+  border-radius: 10px; box-shadow: var(--cc-shadow-lg); width: 460px; max-width: 100%;
+  max-height: calc(100vh - 48px); display: flex; flex-direction: column;
+  overflow: hidden;
+}
+.cc-modal-head {
+  padding: 18px 20px 14px; border-bottom: 1px solid var(--cc-divider);
+  display: flex; align-items: flex-start; gap: 12px; flex-shrink: 0;
+}
+.cc-modal-body { padding: 20px; overflow-y: auto; }
+.cc-modal-foot {
+  padding: 14px 20px; border-top: 1px solid var(--cc-divider);
+  background: var(--cc-surface-2);
+  display: flex; justify-content: flex-end; gap: 8px; flex-shrink: 0;
+}
+
+/* Chip (for time-picker day toggles + hold duration selector) */
+.cc-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-family: var(--cc-font-mono); font-size: 11px; font-weight: 500;
+  letter-spacing: .04em; text-transform: uppercase;
+  padding: 4px 10px; border-radius: 999px;
+  border: 1px solid var(--cc-border-strong); background: var(--cc-surface);
+  color: var(--cc-fg-2); cursor: pointer;
+  transition: background .12s, color .12s, border-color .12s;
+}
+.cc-chip:hover { background: var(--cc-surface-2); }
+.cc-chip--on { background: var(--cc-primary); color: var(--cc-primary-fg); border-color: var(--cc-primary); }
+
+/* Subtle divider label */
+.cc-section-label {
+  font-family: var(--cc-font-mono); font-size: 11px; font-weight: 500;
+  letter-spacing: .04em; text-transform: uppercase; color: var(--cc-fg-3);
+}
+
+/* Row (for control panel sections) */
+.cc-row {
+  display: flex; align-items: center; gap: 12px; min-height: 32px;
+}
+.cc-row--disabled { opacity: .5; }
+
+/* Table reset */
+.cc-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.cc-table th {
+  text-align: left; padding: 10px 14px; font-family: var(--cc-font-mono);
+  font-size: 11px; font-weight: 500; letter-spacing: .04em;
+  text-transform: uppercase; color: var(--cc-fg-3);
+}
+.cc-table td { padding: 10px 14px; vertical-align: middle; }
+.cc-table tr + tr td, .cc-table tr + tr th { border-top: 1px solid var(--cc-divider); }
+
+/* Status dot (small colored circle) */
+.cc-statusdot {
+  width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; display: inline-block;
+}
+
+/* Scrollbar sanity */
+.cc ::-webkit-scrollbar { width: 10px; height: 10px; }
+.cc ::-webkit-scrollbar-thumb { background: var(--cc-neutral-300); border-radius: 999px; }
+.cc ::-webkit-scrollbar-track { background: transparent; }

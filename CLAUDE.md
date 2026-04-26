@@ -806,40 +806,78 @@ via `make mosquitto-passwd` equivalent — not committed to repo.
 See `docs/architecture/client.md` for full detail. Key points:
 
 **Stack:** React 19 + JavaScript + Vite + SWR + shadcn/ui + Tailwind + Recharts +
-React Router. No TypeScript. No Redux.
+React Router. No TypeScript. No Redux. No TanStack Query.
+
+**Mockup:** `web-client/mockup/` — served locally on port 8090 via the `mockup`
+Docker Compose profile (`make mockup`). Canonical visual reference for Phase 6
+implementation. Read `web-client/mockup/README.md` for component inventory, CSS
+token reference (`--cc-*` variables), and interaction states. Design system uses
+JetBrains Mono for all numeric readouts with `font-variant-numeric: tabular-nums`
+throughout. Time labels use 12-hour AM/PM format everywhere.
+
+**Backend changes required before Phase 6b (do not block 6a):**
+- Desired state schema change: add `manual_active BOOLEAN`, `manual_mode TEXT`
+  columns. Targets (`target_temp`, `target_hum`) persist independently of whether
+  Hold is active. Decouples stored preferences from active control state.
+  Control loop derives mode from `manual_active` + expiry check, not a `mode` column.
+- `PUT /api/v1/users/me` endpoint: timezone field (IANA string). Required for
+  Account settings modal and correct schedule period display in user local time.
 
 **Navigation structure:**
 ```
 Login → Dashboard (room cards grid)
          ├─→ Room detail
-         │     ├─ Overview tab   (current state + control panel, side-by-side)
-         │     ├─ History tab    (climate chart, window selector)
-         │     ├─ Schedules tab  (schedule list, inline period expansion, modal for period edit)
-         │     └─ Devices tab    (read-only, links to Devices page)
-         └─→ Devices page        (all devices, inline assignment/unassignment)
+         │     ├─ Overview tab   (current state card + control panel, side-by-side)
+         │     ├─ History tab    (two stacked charts — temp + humidity, window selector)
+         │     ├─ Schedules tab  (schedule list, inline period accordion, period modal)
+         │     └─ Devices tab    (full management — not read-only)
+         └─→ Devices page        (all devices, inline room assignment dropdown)
 ```
 
-**Overview tab:** side-by-side panels. Left: live readings (temperature, humidity),
-actuator state indicators, control source, last updated. Right: control panel —
-mode selector (OFF/AUTO), target temp/humidity, manual override toggle with duration.
+**Overview tab — control panel:** Four sections: Schedule (shows active schedule
+name, greys out when Hold active), Mode (OFF/AUTO segmented), Capability rows
+(Temperature + Humidity always rendered — absent capabilities greyed with tooltip,
+per-capability enable toggle, inputs pre-filled from saved desired state, deadband
+pill clickable → Tolerances modal), Hold (Off/On segmented, duration chips: 30min /
+1h / 2h / 4h / Indefinite, disabled when AUTO + no capabilities active). Apply +
+Revert footer. "Hold" is the UI term — "override" and "manual override" do not
+appear in the UI.
 
-**History tab:** Recharts line chart. `connectNulls={false}` — gaps mean device
-offline. Target band overlay (`target ± deadband`) rendered as dashed lines.
-Heater/humidifier duty cycle on secondary axis or separate panel. Window selector:
-`1h`, `6h`, `24h`, `7d` buttons, default `24h`. Re-fetches on window change.
+**History tab:** Two stacked Recharts charts (temperature above, humidity below).
+Each chart: primary line, dashed target ± deadband overlay (toggleable), background
+opacity fill for duty cycle — warm tint for heater, cool tint for humidifier, opacity
+proportional to 0.0–1.0 duty fraction (toggleable). `connectNulls={false}` — gaps
+mean no data. generateTimeTicks plan: 1h→15min, 6h→1h, 24h→6h, 7d→24h ticks.
+Architecture-ready for scroll-to-zoom (not implemented Phase 6).
 
 **SWR polling:**
 - Dashboard + overview tab: poll every 30s
-- History tab: poll every 60s + `revalidateOnFocus: true`. Full re-fetch on each
-  poll — avoids mixing raw and bucketed data at the chart edge.
+- History tab: poll every 60s + `revalidateOnFocus: true`
 
-**Auth:** JWT access token in memory (not localStorage). Refresh token in httpOnly
-cookie — set by api-service on login/refresh, cleared on logout. SWR intercepts
-401 → trigger refresh → retry. Silent re-auth on page load.
+**Auth:** JWT access token in React context (in-memory, not localStorage). Refresh
+token in httpOnly cookie. All fetch calls use `credentials: "include"`. SWR global
+fetcher intercepts 401 → refresh (deduplicated — single in-flight promise shared
+across concurrent 401s) → retry once. Silent re-auth on page load.
 
 **Capability-aware rendering:** client uses `GET /rooms/:id` sensor/actuator list
 to determine which controls and indicators to render. Distinguishes structural nulls
 (no humidifier) from transient nulls (humidifier exists, no recent reading).
+
+**Control source label mapping** (backend → UI):
+- `manual_override` → "Hold active"
+- `schedule` → "Schedule"
+- `grace_period` → "Grace period"
+- `none` → "Idle"
+
+**Devices tab:** Full management surface — edit and delete devices from the
+room-scoped tab, not just the global Devices page.
+
+**Period modal time pickers:** Two modes toggled in modal header. Clock mode
+(default): popover ClockPicker anchored below time field, circular face, hour →
+minute steps, AM/PM toggle. Timeline mode: 24h band with draggable start/end knobs,
+existing periods filtered by selected days (Option B), 15-min snap. Week view
+expansion shows 7-day grid with per-day period blocks and current-period preview.
+Midnight-crossing periods not supported (consistent with backend constraint).
 
 ---
 

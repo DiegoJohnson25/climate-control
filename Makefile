@@ -41,6 +41,12 @@ rebuild:
 demo:
 	$(MAKE) simulator-start SIM=demo
 
+mockup:
+	$(COMPOSE_ALL) --profile mockup up -d
+
+mockup-down:
+	$(COMPOSE_ALL) --profile mockup down
+
 # ── Infrastructure ────────────────────────────────────────────────────────────
 
 infra:
