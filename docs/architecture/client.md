@@ -1,7 +1,8 @@
-# Web Client — Design Reference
+# Web Client — Architecture Reference
 
-All UI/UX and implementation decisions agreed on across planning sessions.
-Use this as the source of truth when building Phase 6.
+React SPA served as static files by NGINX. Consumes the API Server REST API via NGINX proxy. All API calls use `credentials: "include"` so the httpOnly refresh cookie is sent automatically.
+
+**Status:** Phase 6 — in progress.
 
 ---
 
@@ -10,220 +11,114 @@ Use this as the source of truth when building Phase 6.
 | Technology | Purpose |
 |---|---|
 | React 19 | UI component framework |
-| JavaScript (not TypeScript) | Overhead not justified for this scope |
 | Vite | Build tooling and dev server |
-| SWR | Server state — data fetching, polling, cache |
+| SWR | Server state — data fetching, polling, cache invalidation |
 | shadcn/ui + Tailwind | Component library and utility CSS |
-| Recharts | Time series charts for history tab |
+| Recharts | Time series charts for climate history |
 | React Router | Client-side routing |
 
-**No Redux** — SWR covers all server state. Local UI state via `useState` is
-sufficient. No complex cross-component state sync problem exists.
-
-**No TypeScript** — low React familiarity, offloading React work to Claude, thin
-UI over a clean REST API. Not worth the overhead at this scope.
-
-**Why SWR not React Query** — simpler mental model. React Query's mutation
-machinery and advanced cache control are not needed here.
+No TypeScript. No Redux. No TanStack Query.
 
 ---
 
-## Auth
+## Auth implementation
 
-- JWT access token stored **in memory** (JavaScript variable) — not localStorage,
-  not sessionStorage. Lost on page refresh — user re-authenticates via refresh token.
-- Refresh token stored in **httpOnly cookie** — XSS safe, sent automatically by
-  the browser on requests to the same origin.
-- SWR intercepts `401` responses → triggers refresh → retries the original request.
-- On logout: clear in-memory access token, call logout endpoint to invalidate
-  refresh token server-side, redirect to login.
-- On page load: attempt silent refresh before rendering protected routes. If
-  refresh fails → redirect to login.
+Access token stored in React context (in-memory) — not localStorage, not sessionStorage. Lost on page refresh — the httpOnly refresh cookie handles silent re-authentication transparently.
+
+**Login flow:** `POST /auth/login` → access token stored in context → redirect to Dashboard.
+
+**Page load:** silent `POST /auth/refresh` attempted before rendering protected routes. Success → token stored, app renders. Failure → redirect to login.
+
+**401 intercept:** SWR global fetcher intercepts 401 responses → triggers refresh → retries the original request once. If retry also 401s → redirect to login.
+
+**Refresh deduplication:** a single in-flight refresh promise is shared across concurrent 401s. If two SWR hooks 401 simultaneously, only one refresh call fires — both hooks await the same promise. Prevents concurrent refresh races.
+
+**Logout:** clear access token from context → `POST /auth/logout` to invalidate refresh token server-side → redirect to login.
 
 ---
 
 ## Navigation structure
 
 ```
-Login → Dashboard (room cards grid)
-         ├─→ Room detail (tabbed)
-         │     ├─ Overview tab    (current state + control panel, side-by-side)
-         │     ├─ History tab     (climate chart + window selector)
-         │     ├─ Schedules tab   (schedule list, inline accordion, period modal)
-         │     └─ Devices tab     (read-only, links to Devices page)
-         └─→ Devices page         (flat list, inline assignment dropdown)
+Login
+└── Dashboard (room cards grid)
+      ├── Room detail (tabbed)
+      │     ├── Overview     current state card + control panel
+      │     ├── History      stacked climate charts, window selector
+      │     ├── Schedules    schedule list, inline period accordion, period modal
+      │     └── Devices      full management
+      └── Devices page       flat device list, inline room assignment
 ```
 
-**Persistent top nav** — Dashboard and Devices accessible from anywhere.
-Room detail is always one click from Dashboard. Max depth: three clicks from
-login to any piece of data.
-
-**No single-room redirect on login** — consistent behaviour regardless of room
-count. Always land on Dashboard.
+Persistent top nav on all authenticated screens. Maximum depth: three clicks from login to any piece of data. Always lands on Dashboard on login — no single-room redirect.
 
 ---
 
-## Dashboard
+## SWR polling intervals
 
-Room cards grid. Each card shows:
-- Room name
-- Current temperature and humidity (from `/climate` endpoint)
-- Current mode and control source
-- Heater / humidifier state indicators
-
-Cards are clickable — navigate to Room detail. SWR polls `/rooms` and
-`/rooms/:id/climate` every **30 seconds**.
+| View | Endpoint | Interval |
+|---|---|---|
+| Dashboard | `GET /rooms` | 30s |
+| Dashboard | `GET /rooms/:id/climate` (per room) | 30s |
+| Overview tab | `GET /rooms/:id/climate` | 30s |
+| History tab | `GET /rooms/:id/climate/history` | 60s + revalidate on focus |
 
 ---
 
-## Room detail — Overview tab
+## Capability-aware rendering
 
-Side-by-side panel layout. Both panels visible simultaneously — user watches
-readings while adjusting controls. No modal for control input.
+The client uses `GET /rooms/:id` sensor and actuator lists to determine which controls and indicators to render. Distinguishes structural nulls (device does not exist) from transient nulls (device exists, no recent reading):
 
-**Left panel — current state:**
-- Temperature reading with `last_updated` timestamp
-- Humidity reading with `last_updated` timestamp
-- Heater state indicator (on/off, or greyed out if room has no heater)
-- Humidifier state indicator (on/off, or greyed out if room has no humidifier)
-- Control source badge (`manual_override` / `schedule` / `grace_period` / `none`)
+- A room with no humidifier never shows humidity controls.
+- A room with a humidifier but no recent reading shows the control, but the readout shows `—`.
 
-**Right panel — control panel:**
-- Mode selector: OFF / AUTO toggle
-- Target temperature input (shown only when mode is AUTO and room has temp capability)
-- Target humidity input (shown only when mode is AUTO and room has humidity capability)
-- Manual override toggle with duration selector
-
-**Capability awareness** — the client uses the room's sensor/actuator list from
-`GET /rooms/:id` to determine which controls and indicators to render. A room
-with no humidifier never shows a humidifier indicator or humidity target input.
-This also distinguishes structural nulls (no humidifier) from transient nulls
-(humidifier exists, no recent reading) in the climate response.
-
-**Polling** — SWR polls `/rooms/:id/climate` every **30 seconds**.
+This applies throughout: dashboard badges, control panel rows, history charts, schedule period columns, period modal inputs, tolerances modal fields.
 
 ---
 
-## Room detail — History tab
+## Control source label mapping
 
-**Chart:** Recharts `LineChart` or `ComposedChart`. Lines rendered per
-measurement type. Null values render as **gaps in the line** — `connectNulls={false}`
-(Recharts default). A gap means the device was offline or readings were stale.
-Do not connect across gaps.
+The `control_source` field from the API maps to user-facing labels. The word "override" does not appear in the UI — "Hold" is the established thermostat convention.
 
-**Lines rendered:**
-- Average temperature (`avg_temp`)
-- Average humidity (`avg_hum`)
-- Target temperature band overlay (`target_temp ± deadband_temp`) — dashed lines,
-  only shown when data has non-null targets
-- Target humidity band overlay (`target_hum ± deadband_hum`) — dashed lines,
-  only shown when data has non-null targets
-- Heater duty cycle (`heater_duty`) — secondary axis or separate panel, 0.0–1.0
-- Humidifier duty cycle (`humidifier_duty`) — secondary axis or separate panel, 0.0–1.0
-
-Omit lines for capabilities the room doesn't have (use room capability data from
-`GET /rooms/:id`).
-
-**Window selector** — four buttons: `1h`, `6h`, `24h`, `7d`. Default: `24h`.
-Selecting a window triggers an immediate re-fetch.
-
-**Polling** — SWR polls `/rooms/:id/climate/history?window=<w>` every **60 seconds**.
-Also re-fetches on tab focus (`revalidateOnFocus: true`).
-
-**Data shape from API:**
-```json
-{
-  "window": "6h",
-  "bucket_seconds": 180,
-  "points": [
-    {
-      "time": "2026-04-23T08:00:00Z",
-      "avg_temp": 21.8,
-      "avg_hum": 57.2,
-      "heater_duty": 0.6,
-      "humidifier_duty": null,
-      "target_temp": 22.0,
-      "target_hum": null,
-      "deadband_temp": 0.5,
-      "deadband_hum": null
-    }
-  ]
-}
-```
-
-`bucket_seconds` is available for Recharts tick formatting if needed. Null fields
-mean either the room lacks that capability (structural) or no data that bucket
-(transient) — the client uses room capability data to distinguish.
+| API value | UI label |
+|---|---|
+| `manual_override` | Hold active |
+| `schedule` | Schedule |
+| `grace_period` | Grace period |
+| `none` | Idle |
 
 ---
 
-## Room detail — Schedules tab
+## History charts
 
-**Schedule list** — each schedule shows name, active/inactive status, and an
-activate/deactivate toggle.
+Two stacked Recharts charts — temperature above, humidity below. Separated to avoid dual-axis clutter and to give each chart's y-axis unambiguous meaning.
 
-**Period list** — inline accordion expansion within the schedule row. Clicking
-a schedule expands to show its periods. No navigation — stays on the same tab.
+Each chart renders:
+- Primary line — `avg_temp` or `avg_hum`
+- Dashed target ± deadband overlay (toggleable)
+- Background opacity fill for actuator duty cycle — warm tint for heater, cool tint for humidifier, opacity proportional to 0.0–1.0 duty fraction (toggleable)
+- `connectNulls={false}` — gaps mean no data for that bucket, not interpolated
 
-**Period editing** — modal form. Small form (days, start time, end time, targets),
-modal is appropriate. No navigation needed.
-
-**No `activatable` field yet** — the API does not currently precompute whether
-a schedule can be activated. The client discovers non-activatable schedules on
-attempted activation (422 response). Greying out the activate button is a future
-enhancement.
+Time tick intervals by window: 1h → 15min, 6h → 1h, 24h → 6h, 7d → 24h.
 
 ---
 
-## Room detail — Devices tab
+## Key design decisions
 
-Read-only. Shows devices assigned to this room — name, hw_id, sensors, actuators.
-Link to Devices page for management. No assignment controls here.
+**Access token in React context, not localStorage** — localStorage is readable by any JavaScript on the page. React context keeps the token in memory, lost on page refresh, with the httpOnly cookie handling silent re-authentication transparently.
 
----
+**Two stacked history charts, not one combined** — separating temperature and humidity eliminates dual-axis clutter, allows both duty cycle fills to be displayed without visual interference, and keeps each chart's y-axis meaningful.
 
-## Devices page
+**Duty cycle as opacity fill, not a line** — background fill shows duty cycle as contextual information without a third axis. Opacity proportional to the 0.0–1.0 fraction preserves nuance — partial on/off buckets are visible without cluttering the primary data lines.
 
-Flat list of all user devices. Each device row shows:
-- Device name, hw_id
-- Current room assignment (or "Unassigned")
-- Inline assignment dropdown — select a room or unassign
+**Hold as the manual control mechanism** — "Hold" is established thermostat language. It implies temporary, it implies taking manual control, and it requires no explanation. The word "override" is deliberately absent from the UI.
 
-This is the only management surface for device assignment. Room detail Devices
-tab is read-only and links here.
+**Capability rows always render, absent capabilities greyed** — layout consistency matters. A greyed row with a tooltip communicates that the capability could exist but the room does not currently have the hardware — which is accurate and leaves the door open for future device additions.
 
 ---
 
-## Key decisions and rationale
+## Pending backend changes (required before Phase 6b)
 
-**Access token in memory, not localStorage** — localStorage is readable by any
-JavaScript on the page (XSS risk). In-memory is lost on refresh but the httpOnly
-refresh cookie handles silent re-authentication transparently.
+**Desired state schema change** — add `manual_active BOOLEAN` and `manual_mode TEXT` columns. Targets (`target_temp`, `target_hum`) must persist independently of whether Hold is active. A user can have saved targets while holding to OFF. The control loop derives mode from `manual_active` + expiry check rather than reading a `mode` column directly.
 
-**History chart re-fetches full array on 60s poll** — appending a partial bucket
-to an aggregated chart is inconsistent (mixing raw and bucketed data at the right
-edge). Full re-fetch avoids this. Payload is ~2–4KB, acceptable on a 60s cadence.
-
-**`connectNulls={false}` on all chart lines** — gaps are meaningful on a monitoring
-dashboard. A gap means the device was offline. Connecting across it would imply
-continuous data that doesn't exist.
-
-**Target band overlay on history chart** — `target ± deadband` rendered as dashed
-lines gives immediate visual context for whether the control loop was achieving
-its goal. Only shown when the data has non-null targets.
-
-**Capability-aware rendering** — client checks `GET /rooms/:id` sensor/actuator
-list before rendering indicators and controls. Avoids showing a humidifier
-indicator for a temp-only room. Also distinguishes "no humidifier" from "humidifier
-offline" when interpreting null values in `/climate` response.
-
-**No redirect to single room on login** — consistent UX regardless of how many
-rooms a user has. Dashboard is always the landing page.
-
-**Side-by-side overview layout, no modal** — user needs to watch live readings
-while adjusting targets. A modal would hide the readings panel. Side-by-side
-keeps both visible simultaneously.
-
-**Schedule periods in inline accordion, not nested route** — periods are a
-sub-list of the schedule, not a separate page. Accordion expansion within the
-tab is the right scope for this amount of content.
+**`PUT /api/v1/users/me`** — update user timezone (IANA string). Required for Account settings modal and correct schedule period display in user local time.

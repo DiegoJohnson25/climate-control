@@ -1,0 +1,455 @@
+/* =============================================================================
+   Climate Control — design tokens
+   Colors, type, spacing, radii, shadows, semantic elements.
+   Scope: light-mode defaults at :root, dark mode under [data-theme="dark"].
+   ========================================================================== */
+
+/* ---------- Fonts: Google Fonts CDN (substitution flag — see README) ------- */
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap");
+
+:root {
+  /* ---- Typography families ------------------------------------------------ */
+  --cc-font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --cc-font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  /* ---- Type scale (px) --------------------------------------------------- */
+  --cc-fs-xs:    12px;
+  --cc-fs-sm:    13px;
+  --cc-fs-base:  14px;
+  --cc-fs-md:    16px;
+  --cc-fs-lg:    18px;
+  --cc-fs-xl:    24px;
+  --cc-fs-2xl:   32px;
+  --cc-fs-3xl:   48px;
+
+  /* ---- Line heights ------------------------------------------------------ */
+  --cc-lh-tight:   1.1;
+  --cc-lh-display: 1.2;
+  --cc-lh-body:    1.45;
+  --cc-lh-mono:    1.0;
+
+  /* ---- Font weights ------------------------------------------------------ */
+  --cc-fw-regular:  400;
+  --cc-fw-medium:   500;
+  --cc-fw-semibold: 600;
+  --cc-fw-bold:     700;
+
+  /* ---- Letter spacing ---------------------------------------------------- */
+  --cc-tracking-tight:  -0.015em;
+  --cc-tracking-normal: 0;
+  --cc-tracking-wide:   0.04em;   /* for ALL-CAPS labels: AUTO / OFF */
+
+  /* =======================================================================
+     COLOR TOKENS — light mode
+     Neutrals are warm-leaning (slate with a hint of stone) to complement
+     the thermal accents. All values in sRGB hex.
+     ===================================================================== */
+
+  /* Base canvas / surface */
+  --cc-bg:         #FAFAF9;  /* app background, off-white warm */
+  --cc-surface:    #FFFFFF;  /* card, modal */
+  --cc-surface-2:  #F5F5F4;  /* sunken panel, subtle section divider */
+  --cc-overlay:    rgba(11, 13, 14, 0.50);
+
+  /* Neutral scale — text, borders, chrome */
+  --cc-neutral-50:  #FAFAF9;
+  --cc-neutral-100: #F4F4F3;
+  --cc-neutral-200: #E7E6E4;
+  --cc-neutral-300: #D3D2CE;
+  --cc-neutral-400: #A8A6A1;
+  --cc-neutral-500: #78766F;
+  --cc-neutral-600: #57554F;
+  --cc-neutral-700: #3D3B36;
+  --cc-neutral-800: #26251F;
+  --cc-neutral-900: #14130F;
+
+  /* Foreground text roles */
+  --cc-fg:         #14130F;  /* primary text */
+  --cc-fg-2:       #3D3B36;  /* secondary text */
+  --cc-fg-3:       #78766F;  /* tertiary / meta */
+  --cc-fg-4:       #A8A6A1;  /* disabled / placeholder */
+  --cc-fg-invert:  #FAFAF9;  /* text on dark surfaces */
+
+  /* Borders and separators */
+  --cc-border:         #E7E6E4;
+  --cc-border-strong:  #D3D2CE;
+  --cc-divider:        #F4F4F3;
+
+  /* ---- THERMAL ACCENTS — the signature color move --------------------- */
+  /* Heat: amber / warm */
+  --cc-heat:        #D97706;  /* primary heat accent */
+  --cc-heat-hover:  #B45309;
+  --cc-heat-tint:   rgba(217, 119, 6, 0.10);
+  --cc-heat-border: rgba(217, 119, 6, 0.30);
+  --cc-heat-fg:     #92400E;  /* text on tint */
+
+  /* Cool: cyan */
+  --cc-cool:        #0891B2;  /* primary cool / humidity accent */
+  --cc-cool-hover:  #0E7490;
+  --cc-cool-tint:   rgba(8, 145, 178, 0.10);
+  --cc-cool-border: rgba(8, 145, 178, 0.30);
+  --cc-cool-fg:     #155E75;  /* text on tint */
+
+  /* ---- Semantic colors (used sparingly) ------------------------------- */
+  --cc-success:        #16A34A;
+  --cc-success-tint:   rgba(22, 163, 74, 0.10);
+  --cc-success-fg:     #166534;
+
+  --cc-warning:        #CA8A04;
+  --cc-warning-tint:   rgba(202, 138, 4, 0.10);
+  --cc-warning-fg:     #854D0E;
+
+  --cc-danger:         #DC2626;
+  --cc-danger-tint:    rgba(220, 38, 38, 0.10);
+  --cc-danger-fg:      #991B1B;
+
+  --cc-info:           #2563EB;
+  --cc-info-tint:      rgba(37, 99, 235, 0.10);
+  --cc-info-fg:        #1E40AF;
+
+  /* ---- Interaction primary (used for AUTO mode, primary CTAs) --------- */
+  --cc-primary:        #14130F;   /* near-black — matches the instrumentation feel */
+  --cc-primary-hover:  #26251F;
+  --cc-primary-fg:     #FAFAF9;
+
+  /* Focus ring */
+  --cc-ring:           #0891B2;
+  --cc-ring-offset:    #FAFAF9;
+
+  /* =======================================================================
+     SPACING (4px base)
+     ===================================================================== */
+  --cc-space-0:  0;
+  --cc-space-1:  4px;
+  --cc-space-2:  8px;
+  --cc-space-3:  12px;
+  --cc-space-4:  16px;
+  --cc-space-5:  20px;
+  --cc-space-6:  24px;
+  --cc-space-8:  32px;
+  --cc-space-10: 40px;
+  --cc-space-12: 48px;
+  --cc-space-16: 64px;
+  --cc-space-24: 96px;
+
+  /* =======================================================================
+     RADII
+     ===================================================================== */
+  --cc-radius-sm:   4px;
+  --cc-radius-md:   6px;
+  --cc-radius-lg:   10px;
+  --cc-radius-pill: 999px;
+
+  /* =======================================================================
+     SHADOWS
+     ===================================================================== */
+  --cc-shadow-sm: 0 1px 2px rgba(20, 19, 15, 0.04), 0 1px 1px rgba(20, 19, 15, 0.02);
+  --cc-shadow-md: 0 4px 12px rgba(20, 19, 15, 0.06), 0 2px 4px rgba(20, 19, 15, 0.04);
+  --cc-shadow-lg: 0 16px 40px rgba(20, 19, 15, 0.10), 0 4px 12px rgba(20, 19, 15, 0.06);
+
+  /* =======================================================================
+     MOTION
+     ===================================================================== */
+  --cc-dur-fast:   120ms;
+  --cc-dur-base:   180ms;
+  --cc-dur-slow:   240ms;
+  --cc-dur-fade:   600ms;   /* live-value fade on new reading */
+
+  --cc-ease:       cubic-bezier(0.2, 0, 0.2, 1);
+  --cc-ease-soft:  cubic-bezier(0.32, 0.72, 0, 1);
+
+  /* =======================================================================
+     LAYOUT
+     ===================================================================== */
+  --cc-nav-h:        56px;
+  --cc-max-width:    1280px;
+  --cc-card-pad:     20px;
+  --cc-page-pad-x:   24px;
+}
+
+/* ---------------------------------------------------------------------------
+   Dark mode — token overrides only.
+   Structure stays identical; values shift.
+   ------------------------------------------------------------------------ */
+[data-theme="dark"] {
+  --cc-bg:         #0B0D0E;
+  --cc-surface:    #141618;
+  --cc-surface-2:  #1C1E21;
+  --cc-overlay:    rgba(0, 0, 0, 0.65);
+
+  --cc-neutral-50:  #14130F;
+  --cc-neutral-100: #1C1E21;
+  --cc-neutral-200: #26251F;
+  --cc-neutral-300: #3D3B36;
+  --cc-neutral-400: #57554F;
+  --cc-neutral-500: #78766F;
+  --cc-neutral-600: #A8A6A1;
+  --cc-neutral-700: #D3D2CE;
+  --cc-neutral-800: #E7E6E4;
+  --cc-neutral-900: #FAFAF9;
+
+  --cc-fg:         #F5F5F4;
+  --cc-fg-2:       #D3D2CE;
+  --cc-fg-3:       #A8A6A1;
+  --cc-fg-4:       #78766F;
+  --cc-fg-invert:  #14130F;
+
+  --cc-border:         #26251F;
+  --cc-border-strong:  #3D3B36;
+  --cc-divider:        #1C1E21;
+
+  --cc-heat:        #F59E0B;
+  --cc-heat-hover:  #FBBF24;
+  --cc-heat-tint:   rgba(245, 158, 11, 0.14);
+  --cc-heat-border: rgba(245, 158, 11, 0.35);
+  --cc-heat-fg:     #FBBF24;
+
+  --cc-cool:        #22D3EE;
+  --cc-cool-hover:  #67E8F9;
+  --cc-cool-tint:   rgba(34, 211, 238, 0.12);
+  --cc-cool-border: rgba(34, 211, 238, 0.35);
+  --cc-cool-fg:     #67E8F9;
+
+  --cc-primary:        #FAFAF9;
+  --cc-primary-hover:  #E7E6E4;
+  --cc-primary-fg:     #14130F;
+
+  --cc-ring:           #22D3EE;
+  --cc-ring-offset:    #0B0D0E;
+
+  --cc-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.40);
+  --cc-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.50);
+  --cc-shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.70);
+}
+
+/* =============================================================================
+   SEMANTIC ELEMENT STYLES
+   Opt-in — scope with class="cc" on an ancestor, or apply directly.
+   ========================================================================== */
+
+.cc, .cc * {
+  box-sizing: border-box;
+}
+
+.cc {
+  font-family: var(--cc-font-sans);
+  font-size: var(--cc-fs-base);
+  line-height: var(--cc-lh-body);
+  color: var(--cc-fg);
+  background: var(--cc-bg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: "cv11", "ss01";   /* Inter: better digits, alt a */
+}
+
+.cc h1, .cc .cc-h1 {
+  font-size: var(--cc-fs-2xl);
+  line-height: var(--cc-lh-display);
+  font-weight: var(--cc-fw-semibold);
+  letter-spacing: var(--cc-tracking-tight);
+  color: var(--cc-fg);
+  margin: 0;
+}
+
+.cc h2, .cc .cc-h2 {
+  font-size: var(--cc-fs-xl);
+  line-height: var(--cc-lh-display);
+  font-weight: var(--cc-fw-semibold);
+  letter-spacing: var(--cc-tracking-tight);
+  color: var(--cc-fg);
+  margin: 0;
+}
+
+.cc h3, .cc .cc-h3 {
+  font-size: var(--cc-fs-lg);
+  line-height: var(--cc-lh-display);
+  font-weight: var(--cc-fw-semibold);
+  color: var(--cc-fg);
+  margin: 0;
+}
+
+.cc h4, .cc .cc-h4 {
+  font-size: var(--cc-fs-md);
+  line-height: var(--cc-lh-tight);
+  font-weight: var(--cc-fw-semibold);
+  color: var(--cc-fg);
+  margin: 0;
+}
+
+.cc p, .cc .cc-body {
+  font-size: var(--cc-fs-base);
+  line-height: var(--cc-lh-body);
+  color: var(--cc-fg-2);
+  margin: 0;
+}
+
+.cc .cc-meta {
+  font-size: var(--cc-fs-xs);
+  color: var(--cc-fg-3);
+  line-height: var(--cc-lh-body);
+}
+
+.cc .cc-label {
+  font-size: var(--cc-fs-xs);
+  font-weight: var(--cc-fw-medium);
+  color: var(--cc-fg-3);
+  letter-spacing: var(--cc-tracking-wide);
+  text-transform: uppercase;
+  font-family: var(--cc-font-mono);
+}
+
+.cc code, .cc .cc-code, .cc .cc-mono {
+  font-family: var(--cc-font-mono);
+  font-size: 0.92em;
+  color: var(--cc-fg);
+}
+
+/* Readout — the hero numeric style. Used for current temp, humidity, etc. */
+.cc .cc-readout {
+  font-family: var(--cc-font-mono);
+  font-size: var(--cc-fs-3xl);
+  font-weight: var(--cc-fw-medium);
+  line-height: var(--cc-lh-mono);
+  letter-spacing: var(--cc-tracking-tight);
+  color: var(--cc-fg);
+  font-variant-numeric: tabular-nums;
+}
+
+.cc .cc-readout-sm {
+  font-family: var(--cc-font-mono);
+  font-size: var(--cc-fs-xl);
+  font-weight: var(--cc-fw-medium);
+  line-height: var(--cc-lh-mono);
+  letter-spacing: var(--cc-tracking-tight);
+  color: var(--cc-fg);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- Reusable primitives ------------------------------------------------ */
+.cc-card {
+  background: var(--cc-surface);
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-radius-md);
+  box-shadow: var(--cc-shadow-sm);
+  padding: var(--cc-card-pad);
+}
+
+.cc-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--cc-font-mono);
+  font-size: 11px;
+  font-weight: var(--cc-fw-medium);
+  letter-spacing: var(--cc-tracking-wide);
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: var(--cc-radius-pill);
+  border: 1px solid var(--cc-border);
+  background: var(--cc-surface-2);
+  color: var(--cc-fg-2);
+  line-height: 1;
+}
+
+.cc-badge--heat { background: var(--cc-heat-tint); border-color: var(--cc-heat-border); color: var(--cc-heat-fg); }
+.cc-badge--cool { background: var(--cc-cool-tint); border-color: var(--cc-cool-border); color: var(--cc-cool-fg); }
+.cc-badge--ok   { background: var(--cc-success-tint); border-color: rgba(22,163,74,0.30); color: var(--cc-success-fg); }
+.cc-badge--warn { background: var(--cc-warning-tint); border-color: rgba(202,138,4,0.30); color: var(--cc-warning-fg); }
+.cc-badge--err  { background: var(--cc-danger-tint); border-color: rgba(220,38,38,0.30); color: var(--cc-danger-fg); }
+.cc-badge--info { background: var(--cc-info-tint); border-color: rgba(37,99,235,0.30); color: var(--cc-info-fg); }
+
+.cc-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--cc-radius-pill);
+  background: currentColor;
+  display: inline-block;
+}
+
+/* Buttons */
+.cc-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: var(--cc-radius-sm);
+  border: 1px solid transparent;
+  font-family: var(--cc-font-sans);
+  font-size: var(--cc-fs-base);
+  font-weight: var(--cc-fw-medium);
+  line-height: 1;
+  cursor: pointer;
+  transition: background var(--cc-dur-fast) var(--cc-ease),
+              border-color var(--cc-dur-fast) var(--cc-ease),
+              color var(--cc-dur-fast) var(--cc-ease);
+  user-select: none;
+}
+
+.cc-btn:focus-visible {
+  outline: 2px solid var(--cc-ring);
+  outline-offset: 2px;
+}
+
+.cc-btn--primary {
+  background: var(--cc-primary);
+  color: var(--cc-primary-fg);
+}
+.cc-btn--primary:hover  { background: var(--cc-primary-hover); }
+
+.cc-btn--secondary {
+  background: var(--cc-surface);
+  border-color: var(--cc-border-strong);
+  color: var(--cc-fg);
+}
+.cc-btn--secondary:hover { background: var(--cc-surface-2); }
+
+.cc-btn--ghost {
+  background: transparent;
+  color: var(--cc-fg-2);
+}
+.cc-btn--ghost:hover    { background: var(--cc-neutral-100); }
+
+.cc-btn--danger {
+  background: var(--cc-danger);
+  color: #fff;
+}
+.cc-btn--danger:hover { background: #B91C1C; }
+
+.cc-btn--sm { height: 26px; padding: 0 10px; font-size: var(--cc-fs-sm); }
+.cc-btn--lg { height: 40px; padding: 0 16px; font-size: var(--cc-fs-md); }
+.cc-btn--icon { width: 32px; padding: 0; }
+
+/* Inputs */
+.cc-input {
+  height: 32px;
+  padding: 0 10px;
+  background: var(--cc-surface);
+  border: 1px solid var(--cc-border-strong);
+  border-radius: var(--cc-radius-sm);
+  font-family: var(--cc-font-sans);
+  font-size: var(--cc-fs-base);
+  color: var(--cc-fg);
+  transition: border-color var(--cc-dur-fast) var(--cc-ease),
+              box-shadow var(--cc-dur-fast) var(--cc-ease);
+  width: 100%;
+}
+
+.cc-input:focus-visible {
+  outline: none;
+  border-color: var(--cc-ring);
+  box-shadow: 0 0 0 3px rgba(8, 145, 178, 0.18);
+}
+
+.cc-input--mono { font-family: var(--cc-font-mono); font-variant-numeric: tabular-nums; }
+
+/* Subtle live-value fade on new reading */
+@keyframes cc-pulse {
+  0%   { color: var(--cc-fg); }
+  18%  { color: var(--cc-cool); }
+  100% { color: var(--cc-fg); }
+}
+.cc-readout--live {
+  animation: cc-pulse var(--cc-dur-fade) var(--cc-ease);
+}
