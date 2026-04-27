@@ -2,6 +2,10 @@
 
 A distributed IoT backend and React web client built in Go — MQTT telemetry ingestion, bang-bang control loop, TimescaleDB time-series metrics, JWT auth, and horizontal scaling via Kafka partition-per-room ownership.
 
+![System topology](docs/architecture/assets/system-topology.svg)
+
+---
+
 ## What it is
 
 The system lets users maintain target temperature and humidity conditions across multiple rooms automatically. Each room has climate devices assigned to it — sensors that measure conditions and actuators (heaters, humidifiers) that change them. Users set targets for each room either as a persistent hold or via a weekly schedule, and the system handles the rest: reading sensor data, deciding whether to activate or deactivate each actuator, and sending commands to the hardware.
@@ -19,9 +23,7 @@ A Simulator stands in for physical hardware — it provisions realistic room top
 
 ## Architecture
 
-![System topology](docs/architecture/assets/system-topology.svg)
-
-The system has two converging data paths. On the left, the web client communicates with the API Server through NGINX. On the right, ESP32 devices and the Simulator publish telemetry via MQTT through the Device Gateway into Kafka, where the Control Service consumes it by partition. Both paths converge on shared data stores at the bottom.
+The system has two converging data paths. On the left of the diagram, the web client communicates with the API Server through NGINX. On the right, ESP32 devices and the Simulator publish telemetry via MQTT through the Device Gateway into Kafka, where the Control Service consumes it by partition. Both paths converge on shared data stores in the middle.
 
 The telemetry and command paths are intentionally asymmetric. Telemetry flows device → Mosquitto → Kafka Bridge → Kafka → Control Service. Commands flow Control Service → Mosquitto → device directly, bypassing Kafka entirely — commands are point-to-point and low-volume with no benefit from Kafka's ordering or fan-out guarantees.
 
