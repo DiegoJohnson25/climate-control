@@ -10,14 +10,14 @@ intent is not lost when they eventually get picked up.
 **What:** Real-time online/offline status for assigned devices.
 
 **Design:** Redis hash keyed by `hw_id`. Fields: `status` (`online`/`offline`),
-`last_seen` (timestamp). device-service writes on every telemetry message arrival
+`last_seen` (timestamp). Control Service writes on every telemetry message arrival
 (sets `online`, updates `last_seen`) and on watchdog timeout (sets `offline`).
 
 **API:** `GET /devices/:id` folds `status` and `last_seen` into the response.
 Alternatively a dedicated `GET /devices/:id/status` endpoint.
 
 **Scope restriction:** Only devices currently assigned to a room are tracked.
-Unassigned devices have no device-service instance owner and produce no telemetry.
+Unassigned devices have no Control Service instance owner and produce no telemetry.
 
 **Foundation:** Unconditional command heartbeat every tick means TTL-based
 watchdog detection is straightforward — if device stops publishing telemetry,
@@ -73,11 +73,11 @@ comments exist in ingestion code as callsite markers.
 **What:** Device confirms it acted on a command before device-service updates
 `ActuatorStates`.
 
-**Current behaviour:** Fire-and-forget. device-service updates `ActuatorStates`
+**Current behaviour:** Fire-and-forget. Control Service updates `ActuatorStates`
 optimistically on command publish, not on device confirmation.
 
 **Design:** Device publishes to `devices/{hw_id}/cmd/ack` after acting on command.
-device-service subscribes, updates `ActuatorStates` only on confirmed ack.
+Control Service subscribes, updates `ActuatorStates` only on confirmed ack.
 
 **Tradeoff:** Adds complexity and a round-trip delay before state reflects reality.
 Current optimistic approach is acceptable for the project scope. Document as a
@@ -172,8 +172,8 @@ tempDelta = (heatGain - heatLoss) / thermalMass
 Current["temperature"] += tempDelta
 ```
 
-`RoomState` and the `RoomModelCalculator` interface are unchanged — `PhysicsCalculator`
-implements `Tick()` using its own internal parameters.
+`RoomState` and the `RoomModel` interface are unchanged — `PhysicsModel`
+implements `Advance()` using its own internal parameters.
 
 ---
 
@@ -185,5 +185,5 @@ the React web client.
 **Feature parity target:** Same feature set as the React client — dashboard,
 room detail with control panel, history charts, schedule management, device management.
 
-**Backend:** Consumes the same api-service REST API as the React client.
+**Backend:** Consumes the same API Server REST API as the React web client.
 No backend changes required.

@@ -1,7 +1,7 @@
 # Kafka Architecture — Phase 7 Reference
 
-Phase 7 takes device-service from single-instance to genuinely horizontally
-scalable. The core problem: with multiple device-service instances all subscribing
+Phase 7 takes the Control Service from single-instance to genuinely horizontally
+scalable. The core problem: with multiple Control Service instances all subscribing
 to the same Mosquitto telemetry topics, two instances receive the same message
 for the same room. They produce incoherent caches and incorrect, conflicting
 control decisions. Kafka solves this via partition-based room ownership.
@@ -14,44 +14,68 @@ control decisions. Kafka solves this via partition-based room ownership.
 
 - Topic: `telemetry`, 24 partitions, KRaft mode (no ZooKeeper)
 - Partition key: `room_id` bytes via murmur2 hash
-- 24 partitions chosen for headroom — supports up to 24 device-service instances
+- 24 partitions chosen for headroom — supports up to 24 Control Service instances
   without repartitioning
 - Go client: franz-go (`github.com/twmb/franz-go`)
 
 Each room hashes deterministically to one partition. One partition is owned by
-exactly one device-service instance. Therefore each room's telemetry is processed
+exactly one Control Service instance. Therefore each room's telemetry is processed
 by exactly one instance — no duplicate control decisions, no cache incoherence.
 
 ---
 
-## MQTT bridge (new service, Phase 7a)
+## Kafka Bridge (new service, Phase 7a)
 
-The bridge is the only service that subscribes to Mosquitto for telemetry in
-Phase 7. device-service no longer subscribes to Mosquitto for telemetry directly.
+The Kafka Bridge is the only service that subscribes to Mosquitto for telemetry in
+Phase 7. The Control Service no longer subscribes to Mosquitto for telemetry directly.
 
 ### Responsibilities
 
 - Subscribe to `devices/+/telemetry` on Mosquitto
 - Maintain local `map[string]{RoomID, DeviceID}` cache keyed on `hw_id`
 - Warm cache from appdb on startup
-- Consume `stream:cache_invalidation` as consumer group `bridge` — independent
-  from the `device-service` consumer group, same stream, separate offset
+- Consume `stream:cache_invalidation` as consumer group `kafka-bridge` — independent
+  from all Control Service consumers, same stream, separate offset
 - Resolve `hw_id → room_id` and stamp onto the Kafka message payload
 - Produce to Kafka topic `telemetry` with key = `room_id` bytes
+- Forward cache invalidation events from Redis stream to Kafka topic
+  `cache-invalidation` with key = `room_id` bytes
 
-The bridge is pure stateless routing — no control loop, no DB writes, no business
-logic. It translates MQTT messages into Kafka records with room context attached.
+The Kafka Bridge handles all ingestion into Kafka — both telemetry from MQTT and
+cache invalidation events from Redis. It is the single entry point for all data
+entering the Kafka pipeline. It performs no business logic — only protocol
+translation, device-to-room resolution, and Kafka production.
 
 ### Why a separate service
 
-Separating the bridge from device-service maintains the clean `ingestion.Source`
-interface in device-service. Swapping `mqtt.Source` for `kafka.Source` in
-device-service is a one-line change in `main.go`. The bridge's `hw_id → room_id`
-resolution logic doesn't belong in device-service either — it's a routing concern.
+Separating the Kafka Bridge from the Control Service maintains the clean
+`ingestion.Source` interface in the Control Service. Swapping `mqtt.Source` for
+`kafka.Source` is a one-line change in `main.go`. The `hw_id → room_id` resolution
+logic doesn't belong in the Control Service either — it's a routing concern.
+
+Centralising both telemetry and invalidation event ingestion in the Kafka Bridge
+means the Control Service has no Redis dependency in Phase 7. All data arrives
+via Kafka, partitioned by room, with ownership guaranteed by the consumer group
+rebalance protocol.
+
+### Cache invalidation forwarding
+
+The Kafka Bridge consumes the Redis stream as consumer group `kafka-bridge` and
+forwards each invalidation event to the Kafka topic `cache-invalidation` with
+key = `room_id` bytes — the same murmur2 hash used for telemetry. This means
+invalidation events are routed to the same Control Service instance that owns
+the affected room's telemetry partition. No `OwnsRoom()` self-filtering is needed
+in the Control Service — Kafka's partition assignment guarantees the right instance
+receives the right room's events.
+
+The `cache-invalidation` topic is separate from `telemetry` — the Control Service
+handles them through separate consumption paths. Invalidation events are low volume
+compared to telemetry; a separate topic keeps the consumption logic clean and
+independently scalable.
 
 ---
 
-## device-service changes (Phase 7b)
+## Control Service changes (Phase 7b)
 
 ### Source swap
 
@@ -71,7 +95,16 @@ ingestor.Run(ctx, src)
 
 Implements `ingestion.Source`. Runs a franz-go `PollFetches` loop internally.
 Constructs `TelemetryMessage` from Kafka record payload (which already has
-`room_id` and `device_id` stamped by the bridge).
+`room_id` and `device_id` stamped by the Kafka Bridge).
+
+### Cache invalidation via Kafka
+
+The Control Service no longer connects to Redis in Phase 7. Cache invalidation
+events arrive via the `cache-invalidation` Kafka topic, consumed alongside
+telemetry. Because invalidation events are keyed by `room_id` with the same
+murmur2 hash, they are delivered to the same instance that owns the affected
+room's partition. The per-instance Redis consumer group design from Phases 3–6
+is replaced entirely by Kafka partition ownership.
 
 ### Partition ownership callbacks
 
@@ -87,7 +120,7 @@ Constructs `TelemetryMessage` from Kafka record payload (which already has
 2. Evict those rooms from `Store`
 3. Update `Store.assignedPartitions` under write lock
 
-### OwnsRoom becomes real
+### OwnsRoom in Phase 7
 
 ```go
 func (s *Store) OwnsRoom(roomID uuid.UUID) bool {
@@ -99,9 +132,14 @@ func (s *Store) OwnsRoom(roomID uuid.UUID) bool {
 }
 ```
 
-Uses franz-go's exported murmur2 — identical function to what the bridge producer
-uses. The coupling between bridge and device-service on hash function is real but
-contained: both import the same franz-go package, same function, same result.
+Uses franz-go's exported murmur2 — identical function to what the Kafka Bridge
+producer uses. The coupling between the Kafka Bridge and the Control Service on
+hash function is real but contained: both import the same franz-go package, same
+function, same result.
+
+`OwnsRoom()` is no longer used for self-filtering invalidation events — Kafka
+partition ownership guarantees delivery to the correct instance. It is retained
+for cache warm filtering during `OnPartitionsAssigned`.
 
 ### Startup sequence change
 
@@ -122,14 +160,14 @@ entirely owned by `OnPartitionsAssigned`.
 
 ## Commands still bypass Kafka
 
-Actuator commands flow device-service → Mosquitto → ESP32 directly. Permanently.
+Actuator commands flow Control Service → Mosquitto → ESP32 directly. Permanently.
 
-The Kafka bridge handles telemetry ingestion only. Routing commands through Kafka
-would add latency and complexity for no benefit — commands are point-to-point,
-low-volume, and don't benefit from Kafka's fan-out or ordering guarantees.
+The Kafka Bridge handles ingestion only. Routing commands through Kafka would add
+latency and complexity for no benefit — commands are point-to-point, low-volume,
+and don't benefit from Kafka's fan-out or ordering guarantees.
 
-Multiple device-service instances publish to Mosquitto for commands using the
-same credentials but distinct client IDs (`device-service-{HOSTNAME}`). Mosquitto
+Multiple Control Service instances publish to Mosquitto for commands using the
+same credentials but distinct client IDs (`control-service-{HOSTNAME}`). Mosquitto
 allows this. The ACL grants publish rights by username, not client ID.
 
 ---
@@ -137,25 +175,38 @@ allows this. The ACL grants publish rights by username, not client ID.
 ## Redis stream in Phase 7
 
 The `stream:cache_invalidation` stream continues to operate in Phase 7. The
-consumer group name changes to `device-service-{hostname}` (per-instance) —
-this was already the design from Phase 3e. No changes to the stream consumer logic.
+Kafka Bridge consumes it as consumer group `kafka-bridge` and forwards all events
+into Kafka topic `cache-invalidation`.
 
-The bridge adds a second independent consumer group `bridge` on the same stream.
-This is a native Redis Streams feature — multiple consumer groups on one stream,
-each maintaining its own offset, each receiving all events independently.
+The Control Service no longer consumes the Redis stream directly in Phase 7. The
+per-instance consumer group design from Phases 3–6 is superseded by Kafka partition
+ownership. Invalidation events are delivered to the correct Control Service instance
+by Kafka, not by self-filtering in each instance.
+
+---
+
+## Kafka topics
+
+| Topic | Producer | Consumer | Key | Purpose |
+|---|---|---|---|---|
+| `telemetry` | Kafka Bridge | Control Service | `room_id` | Sensor readings from devices |
+| `cache-invalidation` | Kafka Bridge | Control Service | `room_id` | State change events from API Server |
+
+Both topics use the same `room_id` murmur2 partition key. A given room's telemetry
+and invalidation events always route to the same Control Service instance.
 
 ---
 
 ## Docker Compose additions (Phase 7a)
 
 - Kafka broker in KRaft mode
-- MQTT bridge service
+- Kafka Bridge service (`kafka-bridge`)
 - Kafka topic creation as a one-shot init container
 
-Scaling device-service in Phase 7:
+Scaling the Control Service in Phase 7:
 ```bash
-docker compose up --scale device-service=3
+docker compose up --scale control-service=3
 ```
 
 Kafka's consumer group rebalance protocol assigns partitions across the 3 instances
-automatically. No config changes to NGINX, api-service, or any other service.
+automatically. No config changes to NGINX, API Server, or any other service.

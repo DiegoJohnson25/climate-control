@@ -2,9 +2,9 @@
 
 ## Project overview
 
-A distributed IoT climate control system built in Go. ESP32 relay devices publish sensor telemetry (temperature, humidity) via MQTT. A backend device-service ingests that telemetry, evaluates a bang-bang control loop per room, and publishes relay commands back to the devices. A REST API (api-service) lets users configure rooms, devices, schedules, and desired climate state. A React web client provides a dashboard for monitoring and control. A simulator service stands in for physical hardware, making the system fully demonstrable without any ESP32s.
+A distributed IoT climate control system built in Go. ESP32 relay devices publish sensor telemetry (temperature, humidity) via MQTT. A backend Control Service ingests that telemetry, evaluates a bang-bang control loop per room, and publishes relay commands back to the devices. A REST API Server lets users configure rooms, devices, schedules, and desired climate state. A React web client provides a dashboard for monitoring and control. A Simulator stands in for physical hardware, making the system fully demonstrable without any ESP32s.
 
-The architecture is designed to scale: api-service scales horizontally behind NGINX with no code changes (Redis-backed state, stateless request handling). device-service scales via Kafka partition ownership in Phase 7 — each room hashes to one partition, owned by exactly one instance. The Redis stream cache invalidation layer ensures all device-service instances stay in sync with api-service writes.
+The architecture is designed to scale: the API Server scales horizontally behind NGINX with no code changes (Redis-backed state, stateless request handling). The Control Service scales via Kafka partition ownership in Phase 7 — each room hashes to one partition, owned by exactly one instance. The Kafka Bridge ingests both MQTT telemetry and Redis stream cache invalidation events into Kafka, routing each by room_id so every event reaches the correct Control Service instance.
 
 The project serves as a portfolio piece demonstrating distributed systems design, event-driven architecture, IoT protocols, and full-stack development across Go backend, React frontend, and infrastructure layers.
 
@@ -12,17 +12,17 @@ The project serves as a portfolio piece demonstrating distributed systems design
 
 ## Architecture summary
 
-**api-service** — Gin REST API. Owns all user-facing configuration: rooms, devices, schedules, desired state. Writes to PostgreSQL (appdb) via GORM. Publishes cache invalidation events to a Redis Stream on any state change that device-service needs to know about. JWT auth with Redis-backed refresh token rotation. Refresh token stored in httpOnly cookie — not in response body. Read-only TimescaleDB access via pgx for climate endpoints.
+**API Server** (`api-service`) — Gin REST API. Owns all user-facing configuration: rooms, devices, schedules, desired state. Writes to PostgreSQL (appdb) via GORM. Publishes cache invalidation events to a Redis Stream on any state change that the Control Service needs to know about. JWT auth with Redis-backed refresh token rotation. Refresh token stored in httpOnly cookie — not in response body. Read-only TimescaleDB access via pgx for climate endpoints.
 
-**device-service** — Standalone Go binary. Minimal HTTP server on `:8081` for health checks only. Subscribes to MQTT telemetry (Phases 3–6) or Kafka (Phase 7), maintains an in-memory cache of room and device state, runs a bang-bang control loop per room, publishes actuator commands via MQTT, writes sensor readings and control logs to TimescaleDB. Consumes the Redis Stream from api-service to keep its cache in sync.
+**Control Service** (`device-service`) — Standalone Go binary. Minimal HTTP server on `:8081` for health checks only. Subscribes to MQTT telemetry (Phases 3–6) or Kafka (Phase 7), maintains an in-memory cache of room and device state, runs a bang-bang control loop per room, publishes actuator commands via MQTT, writes sensor readings and control logs to TimescaleDB. In Phases 3–6, consumes the Redis Stream from the API Server to keep its cache in sync. In Phase 7, receives both telemetry and cache invalidation events via Kafka — no direct Redis dependency.
 
-**simulator-service** — Provisions simulated users, rooms, devices, desired states, and schedules via the api-service REST API. Publishes realistic sensor telemetry via MQTT. Reacts to actuator commands — room temperature and humidity evolve based on active actuator contributions and passive return-to-ambient. Allows the full system to be demonstrated without physical hardware. Started via `make simulator-start SIM=<name>` or `make demo`.
+**Simulator** (`simulator-service`) — Provisions simulated users, rooms, devices, desired states, and schedules via the API Server REST API. Publishes realistic sensor telemetry via MQTT. Reacts to actuator commands — room temperature and humidity evolve based on active actuator contributions and passive return-to-ambient. Allows the full system to be demonstrated without physical hardware. Started via `make simulator-start SIM=<n>` or `make demo`.
 
-**mqtt-bridge** — New service added in Phase 7. Subscribes to Mosquitto telemetry, resolves hw_id to room_id, and produces to Kafka. The only service that talks to Mosquitto for telemetry in Phase 7 — device-service no longer subscribes to Mosquitto directly.
+**Kafka Bridge** (`kafka-bridge`) — New service added in Phase 7. The single entry point for all data entering the Kafka pipeline. Subscribes to Mosquitto telemetry, resolves `hw_id` to `room_id`, and produces to Kafka topic `telemetry`. Also consumes the Redis Stream and forwards all cache invalidation events to Kafka topic `cache-invalidation`, keyed by `room_id`. Both topics use the same murmur2 partition key — a room's telemetry and invalidation events always route to the same Control Service instance. The Control Service no longer subscribes to Mosquitto or Redis directly in Phase 7.
 
-**web-client** — React SPA (Phase 6). Served as static files by NGINX. Consumes the api-service REST API directly via NGINX proxy. Dashboard showing room climate state, control panel, history charts, schedule management, device management.
+**Web Client** (`web-client`) — React SPA (Phase 6). Served as static files by NGINX. Consumes the API Server REST API directly via NGINX proxy. Dashboard showing room climate state, control panel, history charts, schedule management, device management.
 
-**NGINX** — Single entry point (Phase 5b). Serves React static files from `web-client/dist`. Proxies `/api/` to api-service via Docker DNS round-robin load balancing. api-service port 8080 is not exposed on the host — all traffic enters via NGINX on port 80.
+**NGINX** — Single entry point (Phase 5b). API Gateway — reverse proxy and load balancer. Serves React static files from `web-client/dist`. Proxies `/api/` to the API Server via Docker DNS round-robin load balancing. API Server port 8080 is not exposed on the host — all traffic enters via NGINX on port 80.
 
 **Infrastructure:** PostgreSQL (appdb), TimescaleDB (metricsdb), Redis, Mosquitto MQTT broker, Apache Kafka (Phase 7), all containerised via Docker Compose.
 
@@ -32,17 +32,18 @@ The project serves as a portfolio piece demonstrating distributed systems design
 
 **Completed:**
 - Phase 1 ✅ — repo scaffold, Docker Compose infrastructure, full DB schema
-- Phase 2 ✅ — api-service: all REST endpoints, JWT auth, Redis refresh token rotation
-- Phase 3a ✅ — simulator-service scaffold: config, provisioning, MQTT publish loop
-- Phase 3b ✅ — device-service scaffold: config, cache warm, appdb repository
-- Phase 3c ✅ — device-service ingestion: MQTT source, TimescaleDB writes
-- Phase 3d ✅ — device-service control loop: bang-bang, command publishing, scheduler
-- Phase 3e ✅ — device-service stream: Redis stream consumer, cache invalidation
-- Phase 4a ✅ — CI pipeline, device-service health server, compose health checks, simulator profile
+- Phase 2 ✅ — API Server: all REST endpoints, JWT auth, Redis refresh token rotation
+- Phase 3a ✅ — Simulator scaffold: config, provisioning, MQTT publish loop
+- Phase 3b ✅ — Control Service scaffold: config, cache warm, appdb repository
+- Phase 3c ✅ — Control Service ingestion: MQTT source, TimescaleDB writes
+- Phase 3d ✅ — Control Service control loop: bang-bang, command publishing, scheduler
+- Phase 3e ✅ — Control Service stream: Redis stream consumer, cache invalidation
+- Phase 4a ✅ — CI pipeline, Control Service health server, compose health checks, simulator profile
 - Phase 4b ✅ — reactive room model, environment model, time scaling, physical units
 - Phase 4c ✅ — desired state + schedule provisioning, teardown, demo.yaml 4-user topology
 - Phase 5a ✅ — `GET /rooms/:id/climate`, `GET /rooms/:id/climate/history`, Postman verified
 - Phase 5b ✅ — NGINX reverse proxy, static file serving, API proxy, horizontal scaling verified, auth cookie rewrite
+- Phase docs ✅ — UI/UX mockup, README, full architecture docs overhaul, diagram specifications
 
 **Active branch:** `feat/client-scaffold` — Phase 6a
 
@@ -52,16 +53,17 @@ The project serves as a portfolio piece demonstrating distributed systems design
 
 | Phase | Branch | Scope |
 |---|---|---|
-| 1–4c | — | Repo scaffold, full API, device-service, simulator, CI, reactive model, schedules | ✅ Done |
+| 1–4c | — | Repo scaffold, full API, Control Service, Simulator, CI, reactive model, schedules | ✅ Done |
 | 5a | `feat/api-service-climate` | `GET /rooms/:id/climate`, `GET /rooms/:id/climate/history`, Postman verified | ✅ Done |
 | 5b | `feat/nginx` | NGINX reverse proxy, static file serving, API proxy, horizontal scaling, auth cookie rewrite | ✅ Done |
+| docs | `feat/docs-and-mockup` | UI/UX mockup, README, architecture docs split (explanation + reference pairs), diagram specifications, naming convention updates | ✅ Done |
 | 6a | `feat/client-scaffold` | Vite project, routing, auth flow, JWT handling, persistent nav, SWR setup |
 | 6b | `feat/client-rooms` | Dashboard room cards, room detail shell, overview tab, current state + control panel |
 | 6c | `feat/client-history` | Climate history chart consuming 5a endpoints |
 | 6d | `feat/client-schedules` | Schedule tab, period management modal |
 | 6e | `feat/client-devices` | Devices page, inline assignment, room detail devices tab (read-only) |
-| 7a | `feat/kafka-bridge` | MQTT bridge service, Kafka cluster in docker-compose |
-| 7b | `feat/kafka-device-service` | Replace `mqtt.Source` with `kafka.Source`, partition ownership callbacks, `OwnsRoom()` real implementation |
+| 7a | `feat/kafka-bridge` | Kafka Bridge service, Kafka cluster in docker-compose |
+| 7b | `feat/kafka-control-service` | Replace `mqtt.Source` with `kafka.Source`, partition ownership callbacks, `OwnsRoom()` real implementation, Kafka-routed cache invalidation |
 | 8 | `feat/ci-full` + `feat/docs` | Newman integration + smoke tests in CI, frontend build verification, architecture diagrams, README polish, one-command startup |
 
 **Beyond phase 8 (independent, no strict ordering):**
@@ -104,7 +106,7 @@ climate-control/
 │       ├── health/       # health.go — readiness HTTP server on :8081
 │       ├── control/      # bang-bang logic, command publishing
 │       ├── scheduler/    # per-room ticker goroutines, lifecycle management
-│       └── stream/       # Redis stream consumer, cache invalidation
+│       └── stream/       # Redis stream consumer, cache invalidation (Phases 3–6)
 ├── simulator-service/
 │   ├── cmd/main.go       # flag parsing, run/teardown modes, signal handling
 │   ├── config/
@@ -118,19 +120,32 @@ climate-control/
 │       ├── provisioning/ # provisioning.go — bootstrap, teardown, identity generation
 │       └── simulator/    # simulator.go, room_state.go, model.go
 ├── web-client/           # Phase 6 — Vite + React SPA
+│   ├── mockup/           # Static HTML/CSS mockup — served on port 8090 via make mockup
 │   └── dist/             # Build output served by NGINX — index.html placeholder until Phase 6
-├── mqtt-bridge/          # Phase 7 — MQTT → Kafka bridge service
+├── kafka-bridge/         # Phase 7 — Kafka Bridge service (MQTT + Redis → Kafka)
 ├── deployments/
 │   ├── docker-compose.services.yml
 │   ├── docker-compose.prod.yml
 │   ├── mosquitto/        # mosquitto.conf, passwd, acl
+│   ├── mockup/nginx.conf # NGINX config for mockup profile — mirrors deployments/nginx/nginx.conf
 │   └── nginx/nginx.conf  # NGINX config — upstream, rate limiting, static serving, SPA fallback
 ├── migrations/
 │   ├── appdb/
 │   └── metricsdb/
 ├── docs/
-│   └── architecture/     # kafka.md, stream.md, auth.md, simulator.md, device-service.md,
-│                         # future-features.md, client.md
+│   ├── architecture/
+│   │   ├── assets/           # SVG diagrams — system-topology.svg (+ others as built)
+│   │   ├── control-service.md          # architecture explanation
+│   │   ├── control-service-reference.md # data structures, startup, timing, topics
+│   │   ├── simulator.md                # architecture explanation
+│   │   ├── simulator-reference.md      # YAML schema, data structures, timing math
+│   │   ├── kafka.md                    # Kafka Bridge + Phase 7 scaling design
+│   │   ├── client.md                   # web client architecture explanation
+│   │   ├── client-reference.md         # file structure, hooks, routes, design tokens
+│   │   ├── schema.md                   # Mermaid ERD — appdb + metricsdb
+│   │   └── future-features.md
+│   ├── OPERATIONS.md         # make targets, env vars, scaling, debug flags
+│   └── DEMO.md               # demo walkthrough, simulation configs
 ├── tests/postman/
 ├── docker-compose.yml
 ├── go.work
@@ -155,27 +170,27 @@ climate-control/
 
 | Technology | Purpose |
 |---|---|
-| Gin | HTTP framework — api-service only |
-| GORM | ORM — appdb queries in api-service |
+| Gin | HTTP framework — API Server only |
+| GORM | ORM — appdb queries in API Server |
 | golang-jwt | JWT access token signing and validation |
 | go-redis/v9 | Refresh token storage, rate limiting, Redis Streams |
 
-### Device service
+### Control Service
 
 | Technology | Purpose |
 |---|---|
-| pgx/v5 | Raw SQL — all TimescaleDB queries, device-service appdb queries use Raw+Scan |
+| pgx/v5 | Raw SQL — all TimescaleDB queries, Control Service appdb queries use Raw+Scan |
 | Eclipse Paho Go | MQTT client — aliased `pahomqtt` to avoid package name collision |
-| franz-go | Kafka client — Phase 7, replaces Paho as telemetry source in device-service |
+| franz-go | Kafka client — Phase 7, replaces Paho as telemetry source in Control Service |
 
-### Simulator service
+### Simulator
 
 | Technology | Purpose |
 |---|---|
 | Eclipse Paho Go | MQTT client — telemetry publish, command subscribe |
 | goccy/go-yaml | Simulation config and template loading |
 
-### Web client (Phase 6)
+### Web Client (Phase 6)
 
 | Technology | Purpose |
 |---|---|
@@ -195,14 +210,14 @@ climate-control/
 | Redis | Refresh tokens, rate limiting, cache invalidation stream — host port 6379 |
 | golang-migrate | Schema migrations — auto-run on `docker compose up` |
 | Docker Compose | Container orchestration |
-| NGINX | Reverse proxy, static file serving — port 80 |
+| NGINX | Reverse proxy, load balancer, static file serving — port 80 |
 
 ### Messaging
 
 | Technology | Purpose |
 |---|---|
 | Mosquitto 2.x | MQTT broker — auth enabled, ACL per username — host port 1883 |
-| Apache Kafka (KRaft) | Telemetry pipeline — Phase 7, 24 partitions, no ZooKeeper |
+| Apache Kafka (KRaft) | Telemetry + cache invalidation pipeline — Phase 7, 24 partitions, no ZooKeeper |
 
 ### Tooling & testing
 
@@ -241,7 +256,7 @@ MQTT_DEVICE_PASSWORD=changeme
 # healthcheck user hardcoded: username=healthcheck password=healthcheck — not in .env
 # After changing any MQTT passwords, regenerate the password file: make mosquitto-passwd
 
-# Device service tuning
+# Control Service tuning
 CONTROL_STALE_THRESHOLD_SECONDS=90
 CONTROL_TICK_INTERVAL_SECONDS=10
 CONTROL_CACHE_REFRESH_MINUTES=5
@@ -267,7 +282,7 @@ Internal Docker ports are always hardcoded in connection strings — env var por
 host-machine mappings only. `host=postgres port=5432`, `host=timescaledb port=5432`,
 `host=redis port=6379`, `host=mosquitto port=1883`, `http://api-service:8080`.
 
-api-service port 8080 is internal only — not published on the host. All external
+API Server port 8080 is internal only — not published on the host. All external
 traffic enters via NGINX on port 80.
 
 ---
@@ -296,7 +311,7 @@ traffic enters via NGINX on port 80.
 - No `ID` suffix on method names: `ListByRoom` not `ListByRoomID`
 - Service layer parameters use `input` naming (`req` reserved for handler request structs)
 
-### GORM style (api-service)
+### GORM style (API Server)
 
 - Chain `.Error` directly — no `result` variable, no `RowsAffected`
 - Repo methods return pointer types
@@ -309,9 +324,9 @@ traffic enters via NGINX on port 80.
 - Sensors/actuators serialized as `[]string` of type names
 - Timestamps: RFC3339 UTC. `start_time`/`end_time`: `"HH:MM"`
 
-### GORM Raw+Scan (device-service)
+### GORM Raw+Scan (Control Service)
 
-device-service never uses GORM model-based queries. All appdb queries use
+Control Service never uses GORM model-based queries. All appdb queries use
 `.Raw().Scan()` into unexported local scan structs. GORM tag required for array
 types: `gorm:"type:integer[]"` on `pq.Int64Array` fields.
 
@@ -461,14 +476,29 @@ devices or stale readings.
 
 ### desired_states
 - Every room always has exactly one row — created in same transaction as room
-- `api-service` writes when user makes direct control request
-- `device-service` writes on schedule period transition — does NOT set `manual_override_until`
+- API Server writes when user makes direct control request
+- Control Service reads at each tick via `resolveEffectiveState` — never writes to desired_states
 - `manual_override_until = NULL` means scheduler controls the room
 - `manual_override_until = 9999-12-31T23:59:59Z` means indefinite override
 - API contract: client sends `"indefinite"`, timestamp string, or `null`
 - `desired_states.id` is vestigial — `room_id` is the natural PK but migration not worth it
 - Default deadbands set in `room.Service.Create` as named constants — not in DB migration:
   `defaultTempDeadband = 0.5` and `defaultHumDeadband = 2.0`
+
+### Effective state resolution
+
+`resolveEffectiveState` in the Control Service synthesises effective state from
+multiple durable inputs. `desired_states` is the source of truth for manual
+override intent — it is one input among several, not the complete source of truth
+for moment-to-moment system behaviour. Effective state is computed, ephemeral,
+and never persisted.
+
+| Priority | Condition | Source |
+|---|---|---|
+| 1 | Manual override active and not expired | `desired_states` — `manual_active = true`, `manual_override_until` in future |
+| 2 | Active schedule period matches current day/time | `schedule_periods` — active schedule, matching day and time window |
+| 3 | Within grace period of last period end | Last active period — up to 60s after period end |
+| 4 | None of the above | Mode OFF |
 
 ### Capability checks
 - `mode = AUTO` + `target_temp NOT NULL` → room must have temperature sensor + heater
@@ -498,7 +528,7 @@ devices or stale readings.
 ## NGINX design
 
 Single entry point for the entire stack. All traffic enters via NGINX on port 80.
-api-service port 8080 is internal to the Docker network — not published on the host.
+API Server port 8080 is internal to the Docker network — not published on the host.
 
 ```nginx
 upstream api {
@@ -507,7 +537,7 @@ upstream api {
 ```
 
 **Routing:**
-- `location /api/` — proxied to api-service. No trailing slash on `proxy_pass` —
+- `location /api/` — proxied to API Server. No trailing slash on `proxy_pass` —
   preserves the full URI including the `/api/` prefix.
 - `location /` — static files from `/usr/share/nginx/html` (bind-mounted from
   `web-client/dist`). `try_files $uri $uri/ /index.html` for React Router SPA fallback.
@@ -526,22 +556,22 @@ a strict guard. Tune before any public deployment.
 
 **Horizontal scaling:**
 - Scale via `make up-scaled API=N` or `make scale-api API=N`.
-- Docker DNS round-robins across all api-service instances automatically — no
+- Docker DNS round-robins across all API Server instances automatically — no
   nginx.conf changes needed.
 - NGINX resolves upstream DNS once at startup. Instances added after NGINX starts
   will not receive traffic until NGINX restarts. Always start with the desired
   instance count using `make up-scaled` — do not scale up after the fact.
-- `make scale-api` force-recreates both api-service and NGINX together to ensure
+- `make scale-api` force-recreates both API Server and NGINX together to ensure
   DNS is always fresh. Infrastructure services are untouched (`--no-deps`).
 
 **Makefile targets:**
-- `make up` — single api-service instance, idempotent
+- `make up` — single API Server instance, idempotent
 - `make up-scaled [API=N]` — N instances (default 2), always resyncs NGINX
 - `make scale-api [API=N]` — rescale running stack, resyncs NGINX, no infra restart
 
 ---
 
-## api-service design
+## API Server design
 
 **Auth handler (`auth/handler.go`):**
 - `NewHandler(svc *Service, refreshTTLDays int)` — TTL passed in from `main.go`
@@ -553,14 +583,18 @@ a strict guard. Tune before any public deployment.
 
 ---
 
-## Device-service design
+## Control Service design
 
 See `docs/architecture/device-service.md` for full detail. Key points:
 
-**Startup sequence:** load config → connect → start health server (returns 503) →
-warm cache → start ingestion → create/drain Redis consumer group → start stream
-consumer → start per-room control loop goroutines (staggered) → start periodic
-cache refresh → mark health server ready (returns 200) → block on signal.
+**Startup sequence (Phases 3–6):** load config → connect → start health server
+(returns 503) → warm cache → start ingestion → create/drain Redis consumer group
+→ start stream consumer → start per-room control loop goroutines (staggered) →
+start periodic cache refresh → mark health server ready (returns 200) → block on signal.
+
+**Startup sequence (Phase 7):** load config → connect (no Redis) → register
+partition callbacks → join Kafka consumer group → `OnPartitionsAssigned` warms
+cache and starts control loops → mark health server ready → block on signal.
 
 **Health server:** minimal HTTP server on `:8081`, internal to container only —
 not published on host. Returns 503 until `SetReady()` called after full startup,
@@ -573,8 +607,8 @@ then 200. Port hardcoded in `internal/health` package.
 | Simulator tick interval | — | 10s | Matches CONTROL_TICK_INTERVAL_SECONDS |
 | Stale threshold | `CONTROL_STALE_THRESHOLD_SECONDS` | 90s | 3-reading window — silent >90s means unavailable |
 | Control loop tick | `CONTROL_TICK_INTERVAL_SECONDS` | 10s | Shared with simulator as system heartbeat |
-| Cache refresh interval | `CONTROL_CACHE_REFRESH_MINUTES` | 5min | Safety net for missed stream events |
-| Stream block timeout | — | 5s | Bounds shutdown latency |
+| Cache refresh interval | `CONTROL_CACHE_REFRESH_MINUTES` | 5min | Safety net for missed invalidation events |
+| Stream block timeout | — | 5s | Bounds shutdown latency (Phases 3–6) |
 
 **Control loop truth table:**
 
@@ -589,17 +623,25 @@ then 200. Port hardcoded in `internal/health` package.
 Unconditional command every tick — doubles as device heartbeat. Deadband re-sends
 last state to service device watchdog timers. Safe failure to OFF on stale readings.
 
-**Redis stream:** `stream:cache_invalidation`. Per-instance consumer group
-`device-service-{hostname}` — every instance needs every event. Created at stream
+**Cache invalidation (Phases 3–6):**
+Redis stream `stream:cache_invalidation`. Per-instance consumer group
+`control-service-{hostname}` — every instance needs every event. Created at stream
 tip (`$`) on first start. On restart: drain pending with `0-0` before live reads.
 Unknown events acked and skipped. Failed dispatches not acked — redelivered on restart.
 
-**MQTT topics:**
-- Telemetry: `devices/{hw_id}/telemetry` — QoS 1, device → device-service
-- Commands: `devices/{hw_id}/cmd` — QoS 2, device-service → device
+**Cache invalidation (Phase 7):**
+The Control Service no longer consumes Redis directly. The Kafka Bridge forwards
+all invalidation events from `stream:cache_invalidation` to Kafka topic
+`cache-invalidation`, keyed by `room_id`. The Control Service consumes this topic
+alongside `telemetry` — same partition ownership guarantees delivery to the correct
+instance. No `OwnsRoom()` self-filtering required.
 
-Commands always flow device-service → Mosquitto → device directly, even in Phase 7.
-The Kafka bridge handles telemetry only.
+**MQTT topics:**
+- Telemetry: `devices/{hw_id}/telemetry` — QoS 1, device → Control Service (Phases 3–6) / Kafka Bridge (Phase 7)
+- Commands: `devices/{hw_id}/cmd` — QoS 2, Control Service → device (always direct, all phases)
+
+Commands always flow Control Service → Mosquitto → device directly, even in Phase 7.
+The Kafka Bridge handles ingestion only — telemetry and invalidation events.
 
 ---
 
@@ -638,9 +680,9 @@ Both tables are TimescaleDB hypertables partitioned by `time` with 1-day chunks.
 even after device reassignment. `heater_cmd`/`humidifier_cmd` are SMALLINT not
 BOOLEAN — `AVG()` produces a duty cycle fraction without casting.
 `deadband_temp`/`deadband_hum` are snapshotted from the room cache at write time —
-preserves historical context when deadbands change. api-service reads
+preserves historical context when deadbands change. API Server reads
 `room_control_logs` for climate endpoints; `sensor_readings` is currently write-only
-from device-service.
+from the Control Service.
 
 ---
 
@@ -648,7 +690,7 @@ from device-service.
 
 See `docs/architecture/simulator.md` for full detail. Key points:
 
-**Invocation:** simulator-service has `profiles: ["simulation"]` in docker-compose —
+**Invocation:** Simulator has `profiles: ["simulation"]` in docker-compose —
 excluded from normal `docker compose up`. Use `make simulator-start SIM=<n>`.
 `make demo` starts the demo simulation only — stack must already be running via
 `make up`. `docker compose run` used for teardown.
@@ -684,8 +726,8 @@ idempotent across hard resets and teardown/re-run cycles.
 
 **Teardown:** `--mode=teardown` calls `DELETE /users/me` for each simulated user.
 Cascades to all rooms, devices, and schedules via DB foreign key constraints.
-Device-service caches for deleted rooms become stale but are corrected on the next
-provisioning run via Redis stream invalidation.
+Control Service caches for deleted rooms become stale but are corrected on the next
+provisioning run via cache invalidation events.
 
 **Environment model:**
 
@@ -762,7 +804,7 @@ simulatedTickSeconds      = timeScale * effectivePublishInterval.Seconds()
 watchdogTimeout           = baseTickSeconds * watchdogMultiplier (real wall-clock)
 ```
 
-`baseTickSeconds` = `CONTROL_TICK_INTERVAL_SECONDS` — shared with device-service.
+`baseTickSeconds` = `CONTROL_TICK_INTERVAL_SECONDS` — shared with Control Service.
 `minPublishIntervalMS` defaults to 500ms, overridable in simulation YAML via
 `min_publish_interval_ms`. `maxTimeScale` = 400 — hard cap, validated at load time.
 `watchdogMultiplier` = 3 — hardcoded constant.
@@ -801,7 +843,7 @@ via `make mosquitto-passwd` equivalent — not committed to repo.
 
 ---
 
-## Web client design (Phase 6)
+## Web Client design (Phase 6)
 
 See `docs/architecture/client.md` for full detail. Key points:
 
@@ -885,21 +927,26 @@ Midnight-crossing periods not supported (consistent with backend constraint).
 
 See `docs/architecture/kafka.md` for full detail. Key points:
 
-Single topic `telemetry`, 24 partitions, KRaft mode (no ZooKeeper).
-Partition key: `room_id` bytes via murmur2 hash.
+Two Kafka topics: `telemetry` and `cache-invalidation`. Both use `room_id` bytes
+as the partition key via murmur2 hash — 24 partitions, KRaft mode (no ZooKeeper).
 
-**MQTT bridge** (new service, Phase 7a): subscribes to Mosquitto telemetry,
-stamps `room_id`/`device_id` onto payload, produces to Kafka. Maintains local
-`hw_id → room_id` cache. Consumes Redis Stream as consumer group `bridge`
-(independent from `device-service` group). Stateless routing — no control logic.
+**Kafka Bridge** (new service, Phase 7a, `kafka-bridge`): the single ingestion
+point for the Kafka pipeline. Subscribes to Mosquitto telemetry, stamps
+`room_id`/`device_id` onto payload, produces to `telemetry` topic. Also consumes
+Redis Stream `stream:cache_invalidation` as consumer group `kafka-bridge` and
+forwards all events to `cache-invalidation` topic keyed by `room_id`. Maintains
+local `hw_id → room_id` cache. Performs protocol translation and device-to-room
+resolution — no business logic.
 
-**device-service Phase 7b:** `mqtt.Source` replaced by `kafka.Source` — same
-`ingestion.Source` interface, `TelemetryMessage` struct unchanged. Partition
-ownership callbacks (`OnPartitionsAssigned`, `OnPartitionsRevoked`) manage which
-rooms each instance owns. `OwnsRoom()` becomes real murmur2 check. Cache warm
-moves inside `OnPartitionsAssigned` callback.
+**Control Service Phase 7b:** `mqtt.Source` replaced by `kafka.Source` — same
+`ingestion.Source` interface, `TelemetryMessage` struct unchanged. Consumes both
+`telemetry` and `cache-invalidation` topics. Partition ownership callbacks
+(`OnPartitionsAssigned`, `OnPartitionsRevoked`) manage which rooms each instance
+owns. `OwnsRoom()` becomes real murmur2 check used for cache warm filtering only —
+not for invalidation self-filtering. Cache warm moves inside `OnPartitionsAssigned`
+callback. No Redis dependency in Phase 7.
 
-Commands still flow device-service → Mosquitto → device directly — permanently.
+Commands still flow Control Service → Mosquitto → device directly — permanently.
 
 ---
 
@@ -910,7 +957,7 @@ See `docs/architecture/future-features.md` for design notes. Tracked items:
 - Device connection status (Redis hash, online/offline + last-seen)
 - Sensor/actuator `enabled` boolean with PATCH endpoints
 - Sensor calibration offset (nullable `offset` on sensors, applied at ingestion)
-- Command acknowledgement (device publishes ack, device-service confirms state)
+- Command acknowledgement (device publishes ack, Control Service confirms state)
 - `activatable` bool on schedule list responses
 - Admin API (device blacklist)
 - Connection pool size via env (`DB_POOL_SIZE`)
