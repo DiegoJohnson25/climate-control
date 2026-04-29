@@ -96,48 +96,124 @@ func (r *Repository) UpdateDesiredState(ctx context.Context, ds *models.DesiredS
 // Capability queries
 // ---------------------------------------------------------------------------
 
-// HasTemperatureCapability returns true if the room has at least one device with
-// a temperature sensor AND at least one device with a heater actuator.
-// The sensor and actuator may be on different devices.
-func (r *Repository) HasTemperatureCapability(ctx context.Context, roomID uuid.UUID) (bool, error) {
-	var has bool
-	err := r.db.WithContext(ctx).Raw(`
-		SELECT (
-			EXISTS (
-				SELECT 1 FROM devices d
-				JOIN sensors s ON s.device_id = d.id
-				WHERE d.room_id = ? AND s.measurement_type = 'temperature'
-			)
-			AND
-			EXISTS (
-				SELECT 1 FROM devices d
-				JOIN actuators a ON a.device_id = d.id
-				WHERE d.room_id = ? AND a.actuator_type = 'heater'
-			)
-		)
-	`, roomID, roomID).Scan(&has).Error
-	return has, err
+// RoomCapabilities describes which climate control capabilities are available in a room.
+// Temperature is true when the room has both a temperature sensor and a heater.
+// Humidity is true when the room has both a humidity sensor and a humidifier.
+type RoomCapabilities struct {
+	Temperature bool
+	Humidity    bool
 }
 
-// HasHumidityCapability returns true if the room has at least one device with
-// a humidity sensor AND at least one device with a humidifier actuator.
-// The sensor and actuator may be on different devices.
-func (r *Repository) HasHumidityCapability(ctx context.Context, roomID uuid.UUID) (bool, error) {
-	var has bool
+// RoomWithCapabilities pairs a room with its resolved capability flags.
+type RoomWithCapabilities struct {
+	models.Room
+	Capabilities RoomCapabilities
+}
+
+// RoomCapabilities returns capability flags for a single room in one query using
+// four EXISTS checks — all four conditions evaluated in a single round-trip.
+func (r *Repository) RoomCapabilities(ctx context.Context, roomID uuid.UUID) (RoomCapabilities, error) {
+	var result struct {
+		Temperature bool
+		Humidity    bool
+	}
 	err := r.db.WithContext(ctx).Raw(`
-		SELECT (
-			EXISTS (
-				SELECT 1 FROM devices d
-				JOIN sensors s ON s.device_id = d.id
-				WHERE d.room_id = ? AND s.measurement_type = 'humidity'
-			)
-			AND
-			EXISTS (
-				SELECT 1 FROM devices d
-				JOIN actuators a ON a.device_id = d.id
-				WHERE d.room_id = ? AND a.actuator_type = 'humidifier'
-			)
-		)
-	`, roomID, roomID).Scan(&has).Error
-	return has, err
+		SELECT
+			(
+				EXISTS (
+					SELECT 1 FROM devices d
+					JOIN sensors s ON s.device_id = d.id
+					WHERE d.room_id = ? AND s.measurement_type = 'temperature'
+				)
+				AND
+				EXISTS (
+					SELECT 1 FROM devices d
+					JOIN actuators a ON a.device_id = d.id
+					WHERE d.room_id = ? AND a.actuator_type = 'heater'
+				)
+			) AS temperature,
+			(
+				EXISTS (
+					SELECT 1 FROM devices d
+					JOIN sensors s ON s.device_id = d.id
+					WHERE d.room_id = ? AND s.measurement_type = 'humidity'
+				)
+				AND
+				EXISTS (
+					SELECT 1 FROM devices d
+					JOIN actuators a ON a.device_id = d.id
+					WHERE d.room_id = ? AND a.actuator_type = 'humidifier'
+				)
+			) AS humidity
+	`, roomID, roomID, roomID, roomID).Scan(&result).Error
+	return RoomCapabilities{Temperature: result.Temperature, Humidity: result.Humidity}, err
+}
+
+// BulkRoomCapabilities returns capability flags for a set of rooms in a single query.
+// Returns an empty map for an empty input slice without hitting the database.
+func (r *Repository) BulkRoomCapabilities(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID]RoomCapabilities, error) {
+	out := make(map[uuid.UUID]RoomCapabilities, len(ids))
+	if len(ids) == 0 {
+		return out, nil
+	}
+
+	var rows []struct {
+		ID          uuid.UUID
+		Temperature bool
+		Humidity    bool
+	}
+	err := r.db.WithContext(ctx).Raw(`
+		SELECT
+			r.id,
+			(
+				EXISTS (
+					SELECT 1 FROM devices d
+					JOIN sensors s ON s.device_id = d.id
+					WHERE d.room_id = r.id AND s.measurement_type = 'temperature'
+				)
+				AND
+				EXISTS (
+					SELECT 1 FROM devices d
+					JOIN actuators a ON a.device_id = d.id
+					WHERE d.room_id = r.id AND a.actuator_type = 'heater'
+				)
+			) AS temperature,
+			(
+				EXISTS (
+					SELECT 1 FROM devices d
+					JOIN sensors s ON s.device_id = d.id
+					WHERE d.room_id = r.id AND s.measurement_type = 'humidity'
+				)
+				AND
+				EXISTS (
+					SELECT 1 FROM devices d
+					JOIN actuators a ON a.device_id = d.id
+					WHERE d.room_id = r.id AND a.actuator_type = 'humidifier'
+				)
+			) AS humidity
+		FROM rooms r
+		WHERE r.id IN ?
+	`, ids).Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+
+	for _, row := range rows {
+		out[row.ID] = RoomCapabilities{Temperature: row.Temperature, Humidity: row.Humidity}
+	}
+	return out, nil
+}
+
+// HasTemperatureCapability returns true if the room has both a temperature sensor
+// and a heater. Delegates to RoomCapabilities to avoid SQL duplication.
+func (r *Repository) HasTemperatureCapability(ctx context.Context, roomID uuid.UUID) (bool, error) {
+	caps, err := r.RoomCapabilities(ctx, roomID)
+	return caps.Temperature, err
+}
+
+// HasHumidityCapability returns true if the room has both a humidity sensor and a
+// humidifier. Delegates to RoomCapabilities to avoid SQL duplication.
+func (r *Repository) HasHumidityCapability(ctx context.Context, roomID uuid.UUID) (bool, error) {
+	caps, err := r.RoomCapabilities(ctx, roomID)
+	return caps.Humidity, err
 }

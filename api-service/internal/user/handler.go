@@ -67,6 +67,33 @@ func (h *Handler) Me(c *gin.Context) {
 	})
 }
 
+type updateMeRequest struct {
+	Timezone *string `json:"timezone"`
+}
+
+func (h *Handler) UpdateMe(c *gin.Context) {
+	userID := c.MustGet(ctxkeys.UserID).(uuid.UUID)
+
+	var req updateMeRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+
+	if err := h.svc.UpdateMe(c.Request.Context(), userID, UpdateMeInput{
+		Timezone: req.Timezone,
+	}); err != nil {
+		if errors.Is(err, ErrInvalidTimezone) {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+
+	c.Status(http.StatusNoContent)
+}
+
 func (h *Handler) DeleteMe(c *gin.Context) {
 	userID := c.MustGet(ctxkeys.UserID).(uuid.UUID)
 

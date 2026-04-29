@@ -34,12 +34,41 @@ func NewService(rooms *Repository, metrics *metricsdb.Repository, rdb *redis.Cli
 	return &Service{rooms: rooms, metrics: metrics, rdb: rdb}
 }
 
-func (s *Service) List(ctx context.Context, userID uuid.UUID) ([]models.Room, error) {
-	return s.rooms.List(ctx, userID)
+func (s *Service) List(ctx context.Context, userID uuid.UUID) ([]RoomWithCapabilities, error) {
+	rms, err := s.rooms.List(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	ids := make([]uuid.UUID, len(rms))
+	for i, rm := range rms {
+		ids[i] = rm.ID
+	}
+
+	caps, err := s.rooms.BulkRoomCapabilities(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]RoomWithCapabilities, len(rms))
+	for i, rm := range rms {
+		result[i] = RoomWithCapabilities{Room: rm, Capabilities: caps[rm.ID]}
+	}
+	return result, nil
 }
 
-func (s *Service) GetByID(ctx context.Context, id, userID uuid.UUID) (*models.Room, error) {
-	return s.rooms.GetByIDAndUserID(ctx, id, userID)
+func (s *Service) GetByID(ctx context.Context, id, userID uuid.UUID) (*RoomWithCapabilities, error) {
+	rm, err := s.rooms.GetByIDAndUserID(ctx, id, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	caps, err := s.rooms.RoomCapabilities(ctx, rm.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	return &RoomWithCapabilities{Room: *rm, Capabilities: caps}, nil
 }
 
 func (s *Service) Create(ctx context.Context, userID uuid.UUID, name string) (*models.Room, error) {
@@ -56,7 +85,7 @@ func (s *Service) Create(ctx context.Context, userID uuid.UUID, name string) (*m
 	return &rm, nil
 }
 
-func (s *Service) Update(ctx context.Context, id, userID uuid.UUID, name string, deadbandTemp, deadbandHum *float64) (*models.Room, error) {
+func (s *Service) Update(ctx context.Context, id, userID uuid.UUID, name string, deadbandTemp, deadbandHum *float64) (*RoomWithCapabilities, error) {
 	rm, err := s.rooms.GetByIDAndUserID(ctx, id, userID)
 	if err != nil {
 		return nil, err
@@ -74,7 +103,12 @@ func (s *Service) Update(ctx context.Context, id, userID uuid.UUID, name string,
 		return nil, err
 	}
 	events.NotifyRoomConfigChanged(ctx, s.rdb, rm.ID)
-	return rm, nil
+
+	caps, err := s.rooms.RoomCapabilities(ctx, rm.ID)
+	if err != nil {
+		return nil, err
+	}
+	return &RoomWithCapabilities{Room: *rm, Capabilities: caps}, nil
 }
 
 func (s *Service) Delete(ctx context.Context, id, userID uuid.UUID) error {

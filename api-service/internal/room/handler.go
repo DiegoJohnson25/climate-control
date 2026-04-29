@@ -56,7 +56,7 @@ func (h *Handler) List(c *gin.Context) {
 	}
 	resp := make([]gin.H, len(rms))
 	for i, rm := range rms {
-		resp[i] = roomResponse(&rm)
+		resp[i] = roomResponse(rm)
 	}
 
 	c.JSON(http.StatusOK, resp)
@@ -81,7 +81,7 @@ func (h *Handler) Create(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusCreated, roomResponse(rm))
+	c.JSON(http.StatusCreated, roomResponse(RoomWithCapabilities{Room: *rm}))
 }
 
 func (h *Handler) Get(c *gin.Context) {
@@ -103,7 +103,7 @@ func (h *Handler) Get(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, roomResponse(rm))
+	c.JSON(http.StatusOK, roomResponse(*rm))
 }
 
 func (h *Handler) Update(c *gin.Context) {
@@ -135,7 +135,7 @@ func (h *Handler) Update(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, roomResponse(rm))
+	c.JSON(http.StatusOK, roomResponse(*rm))
 }
 
 func (h *Handler) Delete(c *gin.Context) {
@@ -253,6 +253,11 @@ func (h *Handler) GetClimate(c *gin.Context) {
 		return
 	}
 
+	if reading == nil {
+		c.Status(http.StatusNoContent)
+		return
+	}
+
 	c.JSON(http.StatusOK, reading)
 }
 
@@ -311,7 +316,7 @@ func (h *Handler) GetClimateHistory(c *gin.Context) {
 // Helpers
 // ---------------------------------------------------------------------------
 
-func roomResponse(rm *models.Room) gin.H {
+func roomResponse(rm RoomWithCapabilities) gin.H {
 	return gin.H{
 		"id":            rm.ID,
 		"name":          rm.Name,
@@ -319,6 +324,10 @@ func roomResponse(rm *models.Room) gin.H {
 		"deadband_hum":  rm.DeadbandHum,
 		"created_at":    rm.CreatedAt,
 		"updated_at":    rm.UpdatedAt,
+		"capabilities": gin.H{
+			"temperature": rm.Capabilities.Temperature,
+			"humidity":    rm.Capabilities.Humidity,
+		},
 	}
 }
 
