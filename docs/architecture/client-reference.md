@@ -17,22 +17,35 @@ For architecture overview and design decisions see [`client.md`](client.md).
 web-client/
 ├── src/
 │   ├── api/
-│   │   ├── auth.js        # in-memory token store, refresh logic, deduplication
+│   │   ├── auth.jsx       # token store, AuthContext, doRefresh, useAuth
 │   │   └── fetcher.js     # SWR global fetcher, 401 intercept, retry
 │   ├── components/
-│   │   ├── Nav.jsx        # persistent top nav — Dashboard + Devices links, UserMenu
-│   │   └── ProtectedRoute.jsx  # redirects to /login if no token + refresh fails
+│   │   ├── Nav.jsx        # sticky nav, theme toggle, user menu
+│   │   ├── ProtectedRoute.jsx  # silent refresh on mount, redirects to /login
+│   │   ├── TimezonePrompt.jsx  # dismissible UTC timezone setup banner
+│   │   └── ui/            # populated by npx shadcn add as needed
+│   ├── lib/
+│   │   ├── helpers.js     # timeAgo, fmtTime12, fmtMin12, fmtTick12
+│   │   └── utils.js       # shadcn cn() helper
 │   ├── pages/
 │   │   ├── LoginPage.jsx
+│   │   ├── RegisterPage.jsx
 │   │   ├── DashboardPage.jsx
 │   │   ├── RoomDetailPage.jsx
 │   │   └── DevicesPage.jsx
-│   ├── App.jsx            # router, SWRConfig, auth context provider
-│   └── main.jsx
-├── mockup/                # static HTML/CSS mockup — served on port 8090 via make mockup
+│   ├── styles/
+│   │   └── tokens.css     # --cc-* tokens + cc-* component classes
+│   ├── App.jsx            # router, SWRConfig, AuthProvider, ThemeProvider
+│   ├── index.css          # imports tokens.css + tailwindcss, base body styles
+│   └── main.jsx           # entry point
+├── mockup/                # static HTML/CSS mockup — visual reference only
 ├── dist/                  # Vite build output — served by NGINX
-├── index.html
-└── vite.config.js
+├── public/                # static assets (favicon.svg, icons.svg)
+├── components.json        # shadcn config
+├── index.html             # Vite entry point
+├── jsconfig.json          # @ alias for VS Code intellisense
+├── vite.config.js         # Tailwind plugin, @ alias, /api dev proxy
+└── package.json
 ```
 
 ---
@@ -80,7 +93,7 @@ export async function doRefresh() {
       credentials: 'include',
     })
       .then(r => { if (!r.ok) throw new Error('refresh failed'); return r.json(); })
-      .then(data => { setToken(data.access_token); })
+      .then(data => { setToken(data.access_token); return data; })
       .finally(() => { refreshPromise = null; });
   }
   return refreshPromise;
@@ -145,10 +158,7 @@ Planned hooks:
 /login                          LoginPage
 /                               → redirect to /dashboard
 /dashboard                      DashboardPage
-/rooms/:id                      RoomDetailPage (tab: overview)
-/rooms/:id/history              RoomDetailPage (tab: history)
-/rooms/:id/schedules            RoomDetailPage (tab: schedules)
-/rooms/:id/devices              RoomDetailPage (tab: devices)
+/rooms/:id                      RoomDetailPage
 /devices                        DevicesPage
 ```
 
@@ -158,19 +168,32 @@ All routes except `/login` are wrapped in `ProtectedRoute`.
 
 ## Design system
 
-Design tokens defined in `web-client/mockup/styles/colors_and_type.css` as
-`--cc-*` CSS variables. Component-level classes in
-`web-client/mockup/styles/styles.css`.
+Design tokens are defined in `web-client/src/styles/tokens.css` as
+`--cc-*` CSS custom properties. All component styles are defined as
+`cc-*` CSS classes in the same file and are globally available.
 
 Key token categories:
-- `--cc-bg-*` — background layers (base, surface, raised, overlay)
-- `--cc-text-*` — text hierarchy (primary, secondary, tertiary, disabled)
-- `--cc-accent-*` — brand accent colour
-- `--cc-status-*` — semantic status colours (heat, cool, ok, warn, off)
-- `--cc-border-*` — border colours
+- `--cc-bg` / `--cc-surface` / `--cc-surface-2` — background layers
+- `--cc-fg` / `--cc-fg-2` / `--cc-fg-3` / `--cc-fg-4` — text hierarchy
+- `--cc-heat-*` / `--cc-cool-*` — thermal accent families (each has
+  base, hover, tint, border, fg variants)
+- `--cc-primary` / `--cc-primary-hover` / `--cc-primary-fg` —
+  interaction primary (inverts in dark mode automatically)
+- `--cc-border` / `--cc-border-strong` / `--cc-divider` — borders
+- `--cc-success-*` / `--cc-warning-*` / `--cc-danger-*` / `--cc-info-*`
+  — semantic status families
+- `--cc-hold-*` / `--cc-grace-*` — control source badge accents
+- `--cc-shadow-sm` / `--cc-shadow-md` / `--cc-shadow-lg` — shadows
+- `--cc-radius-sm` / `--cc-radius-md` / `--cc-radius-lg` /
+  `--cc-radius-pill` — border radii
+- `--cc-font-sans` / `--cc-font-mono` — Inter and JetBrains Mono
+- `--cc-fs-*` — type scale (xs through 3xl)
+- `--cc-dur-*` / `--cc-ease` / `--cc-ease-soft` — motion tokens
 
-Typography: Inter for all UI text. JetBrains Mono for all numeric readouts with
-`font-variant-numeric: tabular-nums`. Time labels use 12-hour AM/PM format throughout.
+Dark mode: all tokens override under `[data-theme="dark"]` on `<html>`.
+Toggle via `document.documentElement.setAttribute('data-theme', 'dark')`.
 
-See `web-client/mockup/README.md` for the full component inventory and interaction
-state documentation.
+Typography: Inter for all UI text. JetBrains Mono for all numeric
+readouts with `font-variant-numeric: tabular-nums`. Time labels use
+12-hour AM/PM format throughout (`fmtTime12`, `fmtMin12`, `fmtTick12`
+in `src/lib/helpers.js`).

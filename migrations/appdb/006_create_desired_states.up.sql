@@ -1,3 +1,9 @@
+-- NOTE: This migration will be updated in Phase 6c to replace the
+-- mode column with manual_active (BOOLEAN) and manual_mode (TEXT).
+-- The current mode column is a temporary stand-in. Do not add
+-- downstream dependencies on the mode column — it will be removed.
+-- See CLAUDE.md Phase 6c for the full schema change plan.
+
 BEGIN;
 
 CREATE TABLE desired_states (

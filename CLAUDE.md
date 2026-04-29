@@ -44,8 +44,9 @@ The project serves as a portfolio piece demonstrating distributed systems design
 - Phase 5a ✅ — `GET /rooms/:id/climate`, `GET /rooms/:id/climate/history`, Postman verified
 - Phase 5b ✅ — NGINX reverse proxy, static file serving, API proxy, horizontal scaling verified, auth cookie rewrite
 - Phase docs ✅ — UI/UX mockup, README, full architecture docs overhaul, diagram specifications
+- Phase 6a ✅ — Vite scaffold, design tokens, auth flow, routing, Nav, login/register pages, SWR fetcher, dark mode
 
-**Active branch:** `feat/client-scaffold` — Phase 6a
+**Active branch:** `feat/client-rooms` — Phase 6b
 
 ---
 
@@ -57,11 +58,13 @@ The project serves as a portfolio piece demonstrating distributed systems design
 | 5a | `feat/api-service-climate` | `GET /rooms/:id/climate`, `GET /rooms/:id/climate/history`, Postman verified | ✅ Done |
 | 5b | `feat/nginx` | NGINX reverse proxy, static file serving, API proxy, horizontal scaling, auth cookie rewrite | ✅ Done |
 | docs | `feat/docs-and-mockup` | UI/UX mockup, README, architecture docs split (explanation + reference pairs), diagram specifications, naming convention updates | ✅ Done |
-| 6a | `feat/client-scaffold` | Vite project, routing, auth flow, JWT handling, persistent nav, SWR setup |
-| 6b | `feat/client-rooms` | Dashboard room cards, room detail shell, overview tab, current state + control panel |
-| 6c | `feat/client-history` | Climate history chart consuming 5a endpoints |
-| 6d | `feat/client-schedules` | Schedule tab, period management modal |
-| 6e | `feat/client-devices` | Devices page, inline assignment, room detail devices tab (read-only) |
+| 6a | `feat/client-scaffold` | Vite project, routing, auth flow, JWT handling, persistent nav, SWR setup | ✅ Done |
+| 6b | `feat/client-rooms` | Dashboard room cards, room detail shell, overview tab (read-only), useUser hook, Nav email |
+| 6c | `feat/client-control` | Backend desired_state schema change, PUT /users/me, full control panel with Hold |
+| 6d | `feat/client-history` | History tab — two stacked Recharts charts, window selector, duty cycle overlays |
+| 6e | `feat/client-schedules` | Schedules tab — schedule list, period accordion, period modal (clock + timeline modes) |
+| 6f | `feat/client-devices` | Room-scoped devices tab + global devices page, inline room assignment |
+| 6g | `feat/client-polish` | Account settings, empty states, error states, loading skeletons, client-reference.md |
 | 7a | `feat/kafka-bridge` | Kafka Bridge service, Kafka cluster in docker-compose |
 | 7b | `feat/kafka-control-service` | Replace `mqtt.Source` with `kafka.Source`, partition ownership callbacks, `OwnsRoom()` real implementation, Kafka-routed cache invalidation |
 | 8 | `feat/ci-full` + `feat/docs` | Newman integration + smoke tests in CI, frontend build verification, architecture diagrams, README polish, one-command startup |
@@ -847,79 +850,103 @@ via `make mosquitto-passwd` equivalent — not committed to repo.
 
 See `docs/architecture/client.md` for full detail. Key points:
 
-**Stack:** React 19 + JavaScript + Vite + SWR + shadcn/ui + Tailwind + Recharts +
-React Router. No TypeScript. No Redux. No TanStack Query.
+**Stack:** React 19 + JavaScript (ES2022) + Vite 8 + SWR 2 +
+React Router v7 + Tailwind v4 + shadcn 4.6 (Radix primitives only) +
+Recharts + lucide-react. No TypeScript. No Redux. No TanStack Query.
+Node 22 required (`nvm alias default 22`).
 
-**Mockup:** `web-client/mockup/` — served locally on port 8090 via the `mockup`
-Docker Compose profile (`make mockup`). Canonical visual reference for Phase 6
-implementation. Read `web-client/mockup/README.md` for component inventory, CSS
-token reference (`--cc-*` variables), and interaction states. Design system uses
-JetBrains Mono for all numeric readouts with `font-variant-numeric: tabular-nums`
-throughout. Time labels use 12-hour AM/PM format everywhere.
+**Dev server:** `npm run dev` in `web-client/`. Vite runs on `:5173`.
+All `/api` requests proxied to `http://localhost` (NGINX on port 80).
+Full stack must be running (`make up`) for API calls to resolve.
 
-**Backend changes required before Phase 6b (do not block 6a):**
-- Desired state schema change: add `manual_active BOOLEAN`, `manual_mode TEXT`
-  columns. Targets (`target_temp`, `target_hum`) persist independently of whether
-  Hold is active. Decouples stored preferences from active control state.
-  Control loop derives mode from `manual_active` + expiry check, not a `mode` column.
-- `PUT /api/v1/users/me` endpoint: timezone field (IANA string). Required for
-  Account settings modal and correct schedule period display in user local time.
+**Design system:** `src/styles/tokens.css` — single source of truth for
+all `--cc-*` CSS custom properties (colors, typography, spacing, radii,
+shadows, motion, layout). Full dark mode via `[data-theme="dark"]` on
+`<html>`. Component-level `cc-*` CSS classes defined in `tokens.css` —
+used directly in JSX for all named components (buttons, badges, inputs,
+cards, modals, tables). Tailwind utilities handle layout only (flex,
+grid, gap, padding). shadcn used for complex interactive primitives
+(Popover, Dialog, DropdownMenu) where accessibility behavior is needed.
+
+**File naming:** `.jsx` for any file containing JSX. `.js` for pure
+utility/hook files with no JSX.
+
+**Auth pattern:**
+- Module-level token store in `src/api/auth.jsx`: `getToken()`,
+  `setToken()` (private), `clearToken()` (exported)
+- `doRefresh()` — `POST /auth/refresh`, deduplicates concurrent calls
+  via shared in-flight promise, returns token data
+- `AuthContext` + `AuthProvider` — provides `{ isAuthenticated, login,
+  logout }` to component tree. `login(token)` sets module variable +
+  flips boolean. `logout()` clears both.
+- `useAuth()` hook — throws if used outside `AuthProvider`
+- SWR global fetcher in `src/api/fetcher.js` — attaches Authorization
+  header, intercepts 401, refreshes + retries once, hard redirects to
+  `/login` on double 401 via `window.location.href` (outside React tree)
+
+**Routing (React Router v7):**
+- Public: `/login`, `/register`
+- Protected (wrapped in `ProtectedRoute`): `/dashboard`, `/rooms/:id`,
+  `/devices`
+- `/` redirects to `/dashboard`
+- `ProtectedRoute` — attempts silent refresh on mount if no token in
+  memory; renders null while checking; redirects to `/login` on failure
+
+**Dark mode:** `ThemeProvider` (render props pattern) in `App.jsx`.
+Persisted to `localStorage` under key `cc-theme`. Toggle in Nav.
+All token values swap automatically — no component changes needed.
+
+**Registration flow:** `POST /auth/register` (email + password, min 4
+chars) → immediate `POST /auth/login` with same credentials →
+`login(access_token)` → redirect to `/dashboard`. No timezone at
+registration — UTC default with `TimezonePrompt` banner on dashboard.
+
+**`TimezonePrompt`:** Shown when `user.timezone === 'UTC'`. Auto-detects
+browser timezone. Dismissed state persisted to localStorage under
+`cc-timezone-prompt-dismissed`. `onSave` prop wired in 6b.
+
+**Helpers (`src/lib/helpers.js`):** `timeAgo`, `fmtTime12`, `fmtMin12`,
+`fmtTick12` — all use `Intl.DateTimeFormat` with user's IANA timezone
+(not browser local time).
+
+**Mockup:** `web-client/mockup/` — visual reference only. Do not port
+code patterns — the `window.*` global pattern, raw SVG charts, and
+module structure do not apply to the production app. Use mockup for
+visual structure, CSS class usage, and interaction states only.
+
+**Backend changes required before Phase 6c (do not block 6a/6b):**
+- Desired state schema: add `manual_active BOOLEAN NOT NULL DEFAULT false`
+  and `manual_mode TEXT` columns. Targets persist independently of Hold.
+  Control loop derives mode from `manual_active` + expiry check.
+- `PUT /api/v1/users/me`: accepts `{ timezone: string }` (IANA).
+  Required for Account settings modal and TimezonePrompt save.
 
 **Navigation structure:**
 ```
-Login → Dashboard (room cards grid)
-         ├─→ Room detail
-         │     ├─ Overview tab   (current state card + control panel, side-by-side)
-         │     ├─ History tab    (two stacked charts — temp + humidity, window selector)
-         │     ├─ Schedules tab  (schedule list, inline period accordion, period modal)
-         │     └─ Devices tab    (full management — not read-only)
-         └─→ Devices page        (all devices, inline room assignment dropdown)
+Login / Register
+└── Dashboard (room cards grid)
+    ├── Room detail
+    │     ├── Overview tab   (current state card + control panel)
+    │     ├── History tab    (two stacked Recharts charts)
+    │     ├── Schedules tab  (schedule list, period modal)
+    │     └── Devices tab    (full device management)
+    └── Devices page         (all devices, inline room assignment)
 ```
 
-**Overview tab — control panel:** Four sections: Schedule (shows active schedule
-name, greys out when Hold active), Mode (OFF/AUTO segmented), Capability rows
-(Temperature + Humidity always rendered — absent capabilities greyed with tooltip,
-per-capability enable toggle, inputs pre-filled from saved desired state, deadband
-pill clickable → Tolerances modal), Hold (Off/On segmented, duration chips: 30min /
-1h / 2h / 4h / Indefinite, disabled when AUTO + no capabilities active). Apply +
-Revert footer. "Hold" is the UI term — "override" and "manual override" do not
-appear in the UI.
+**SWR polling intervals:**
+- Dashboard + overview tab: 30s
+- History tab: 60s + `revalidateOnFocus: true`
+- On-demand hooks (room detail, schedules, devices): no polling
 
-**History tab:** Two stacked Recharts charts (temperature above, humidity below).
-Each chart: primary line, dashed target ± deadband overlay (toggleable), background
-opacity fill for duty cycle — warm tint for heater, cool tint for humidifier, opacity
-proportional to 0.0–1.0 duty fraction (toggleable). `connectNulls={false}` — gaps
-mean no data. generateTimeTicks plan: 1h→15min, 6h→1h, 24h→6h, 7d→24h ticks.
-Architecture-ready for scroll-to-zoom (not implemented Phase 6).
+**Capability-aware rendering:** uses sensor/actuator lists from
+`GET /rooms/:id` to determine which controls render. Structural null
+(no device) vs transient null (device exists, no reading) are distinct.
 
-**SWR polling:**
-- Dashboard + overview tab: poll every 30s
-- History tab: poll every 60s + `revalidateOnFocus: true`
-
-**Auth:** JWT access token in React context (in-memory, not localStorage). Refresh
-token in httpOnly cookie. All fetch calls use `credentials: "include"`. SWR global
-fetcher intercepts 401 → refresh (deduplicated — single in-flight promise shared
-across concurrent 401s) → retry once. Silent re-auth on page load.
-
-**Capability-aware rendering:** client uses `GET /rooms/:id` sensor/actuator list
-to determine which controls and indicators to render. Distinguishes structural nulls
-(no humidifier) from transient nulls (humidifier exists, no recent reading).
-
-**Control source label mapping** (backend → UI):
+**Control source label mapping:**
 - `manual_override` → "Hold active"
 - `schedule` → "Schedule"
 - `grace_period` → "Grace period"
 - `none` → "Idle"
-
-**Devices tab:** Full management surface — edit and delete devices from the
-room-scoped tab, not just the global Devices page.
-
-**Period modal time pickers:** Two modes toggled in modal header. Clock mode
-(default): popover ClockPicker anchored below time field, circular face, hour →
-minute steps, AM/PM toggle. Timeline mode: 24h band with draggable start/end knobs,
-existing periods filtered by selected days (Option B), 15-min snap. Week view
-expansion shows 7-day grid with per-day period blocks and current-period preview.
-Midnight-crossing periods not supported (consistent with backend constraint).
 
 ---
 
