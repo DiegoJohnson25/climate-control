@@ -210,3 +210,43 @@ docker compose up --scale control-service=3
 
 Kafka's consumer group rebalance protocol assigns partitions across the 3 instances
 automatically. No config changes to NGINX, API Server, or any other service.
+
+---
+
+## Open design questions (resolve before Phase 7a)
+
+**Device reassignment invalidation in the Kafka Bridge**
+The Bridge maintains a `hw_id → room_id` cache warmed from appdb and
+updated via `stream:cache_invalidation`. When a device is reassigned,
+the Bridge must handle `device_assigned` and `device_unassigned` events
+to keep its routing map current. This parallels what the Control Service
+does via `ReloadDevice` — the Bridge needs the same event handling or
+it will silently misroute telemetry after a reassignment.
+
+**murmur2 hash input must match between Bridge and Control Service**
+`OwnsRoom()` in the Control Service hashes `roomID.String()` (the
+36-character UUID string form). The Kafka Bridge producer must use the
+identical representation as the partition key — not raw UUID bytes
+(`room_id[:]`, 16 bytes). The hash value differs between string and
+byte representations. Both services must import and call the same
+franz-go murmur2 function with the same input format. Add an explicit
+comment at both callsites referencing this constraint.
+
+**`ingestion.Source` handles one message type — Phase 7 needs two**
+The current `ingestion.Source` interface yields `TelemetryMessage`
+only. Phase 7b requires the Control Service to consume both `telemetry`
+and `cache-invalidation` Kafka topics. Options:
+- Second `Source` interface for invalidation events, consumed by the
+  stream consumer goroutine (cleanest separation)
+- Union message type with a Kind discriminator field
+- Separate Kafka consumer outside the `ingestion` package entirely
+Decide before starting Phase 7b — the choice shapes the Phase 7b
+component structure.
+
+**Health server ready timing in Phase 7**
+In Phase 7, `OnPartitionsAssigned` fires asynchronously inside a
+franz-go callback goroutine. `SetReady()` must not be called in
+`main.go` after `Join()` returns — it must be called inside
+`OnPartitionsAssigned` after cache warm and control loop startup
+complete for the assigned partition set. The current Phase 3–6 startup
+sequence (linear, synchronous) does not apply in Phase 7.
