@@ -219,6 +219,8 @@ func (h *Handler) UpdateDesiredState(c *gin.Context) {
 		switch {
 		case errors.Is(err, ErrNotFound):
 			c.JSON(http.StatusNotFound, gin.H{"error": ErrNotFound.Error()})
+		case errors.Is(err, ErrInvalidTarget):
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"error": ErrInvalidTarget.Error()})
 		case errors.Is(err, ErrInvalidState):
 			c.JSON(http.StatusUnprocessableEntity, gin.H{"error": ErrInvalidState.Error()})
 		case errors.Is(err, ErrNoCapability):

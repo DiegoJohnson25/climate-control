@@ -169,6 +169,13 @@ func (s *Service) UpdateDesiredState(ctx context.Context, roomID, userID uuid.UU
 		return models.DesiredState{}, err
 	}
 
+	if input.TargetTemp != nil && (*input.TargetTemp < 5 || *input.TargetTemp > 40) {
+		return models.DesiredState{}, ErrInvalidTarget
+	}
+	if input.TargetHum != nil && (*input.TargetHum < 0 || *input.TargetHum > 100) {
+		return models.DesiredState{}, ErrInvalidTarget
+	}
+
 	if input.ManualActive && input.Mode == "AUTO" {
 		if input.TargetTemp == nil && input.TargetHum == nil {
 			return models.DesiredState{}, ErrInvalidState

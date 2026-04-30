@@ -376,6 +376,13 @@ func validatePeriodRequest(req *periodRequest) error {
 		return errors.New("AUTO mode requires at least one of target_temp or target_hum")
 	}
 
+	if req.TargetTemp != nil && (*req.TargetTemp < 5 || *req.TargetTemp > 40) {
+		return errors.New("target_temp must be between 5 and 40")
+	}
+	if req.TargetHum != nil && (*req.TargetHum < 0 || *req.TargetHum > 100) {
+		return errors.New("target_hum must be between 0 and 100")
+	}
+
 	return nil
 }
 
