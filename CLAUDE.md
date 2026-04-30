@@ -45,8 +45,9 @@ The project serves as a portfolio piece demonstrating distributed systems design
 - Phase 5b ✅ — NGINX reverse proxy, static file serving, API proxy, horizontal scaling verified, auth cookie rewrite
 - Phase docs ✅ — UI/UX mockup, README, full architecture docs overhaul, diagram specifications
 - Phase 6a ✅ — Vite scaffold, design tokens, auth flow, routing, Nav, login/register pages, SWR fetcher, dark mode
+- Phase 6b ✅ — Dashboard, room cards, room detail shell, overview tab, useUser/useRoom/useRooms/useClimate/useSchedules hooks, rename/delete modals, PUT /users/me, room capabilities API
 
-**Active branch:** `feat/client-rooms` — Phase 6b
+**Active branch:** `feat/client-control` — Phase 6c
 
 ---
 
@@ -59,12 +60,12 @@ The project serves as a portfolio piece demonstrating distributed systems design
 | 5b | `feat/nginx` | NGINX reverse proxy, static file serving, API proxy, horizontal scaling, auth cookie rewrite | ✅ Done |
 | docs | `feat/docs-and-mockup` | UI/UX mockup, README, architecture docs split (explanation + reference pairs), diagram specifications, naming convention updates | ✅ Done |
 | 6a | `feat/client-scaffold` | Vite project, routing, auth flow, JWT handling, persistent nav, SWR setup | ✅ Done |
-| 6b | `feat/client-rooms` | Dashboard room cards, room detail shell, overview tab (read-only), useUser hook, Nav email |
-| 6c | `feat/client-control` | Backend desired_state schema change, PUT /users/me, full control panel with Hold |
+| 6b | `feat/client-rooms` | Dashboard room cards, room detail shell, overview tab (read-only), useUser hook, Nav email | ✅ Done |
+| 6c | `feat/client-control` | Desired state schema migration, full control panel wiring, Hold → Manual rename |
 | 6d | `feat/client-history` | History tab — two stacked Recharts charts, window selector, duty cycle overlays |
 | 6e | `feat/client-schedules` | Schedules tab — schedule list, period accordion, period modal (clock + timeline modes) |
 | 6f | `feat/client-devices` | Room-scoped devices tab + global devices page, inline room assignment |
-| 6g | `feat/client-polish` | Account settings, empty states, error states, loading skeletons, client-reference.md |
+| 6g | `feat/client-polish` | Account settings modal, timezone picker, empty states, error states, loading skeletons, client-reference.md |
 | 7a | `feat/kafka-bridge` | Kafka Bridge service, Kafka cluster in docker-compose |
 | 7b | `feat/kafka-control-service` | Replace `mqtt.Source` with `kafka.Source`, partition ownership callbacks, `OwnsRoom()` real implementation, Kafka-routed cache invalidation |
 | 8 | `feat/ci-full` + `feat/docs` | Newman integration + smoke tests in CI, frontend build verification, architecture diagrams, README polish, one-command startup |
@@ -123,8 +124,17 @@ climate-control/
 │       ├── provisioning/ # provisioning.go — bootstrap, teardown, identity generation
 │       └── simulator/    # simulator.go, room_state.go, model.go
 ├── web-client/           # Phase 6 — Vite + React SPA
+│   ├── src/
+│   │   ├── api/          # auth.jsx, fetcher.js, users.js
+│   │   ├── components/   # Nav.jsx, ProtectedRoute.jsx, TimezonePrompt.jsx, RoomCard.jsx
+│   │   ├── hooks/        # useUser.js, useRooms.js, useRoom.js, useClimate.js, useSchedules.js
+│   │   ├── lib/          # helpers.js, utils.js
+│   │   ├── pages/        # LoginPage.jsx, RegisterPage.jsx, DashboardPage.jsx,
+│   │   │                 # RoomDetailPage.jsx, DevicesPage.jsx
+│   │   │   └── tabs/     # OverviewTab.jsx (+ history/schedules/devices in later phases)
+│   │   └── styles/       # tokens.css
 │   ├── mockup/           # Static HTML/CSS mockup — served on port 8090 via make mockup
-│   └── dist/             # Build output served by NGINX — index.html placeholder until Phase 6
+│   └── dist/             # Build output served by NGINX
 ├── kafka-bridge/         # Phase 7 — Kafka Bridge service (MQTT + Redis → Kafka)
 ├── deployments/
 │   ├── docker-compose.services.yml
@@ -415,6 +425,7 @@ POST   /api/v1/auth/login
 POST   /api/v1/auth/refresh
 POST   /api/v1/auth/logout
 GET    /api/v1/users/me
+PUT    /api/v1/users/me
 DELETE /api/v1/users/me
 
 GET    /api/v1/rooms
@@ -448,10 +459,26 @@ GET    /api/v1/rooms/:id/climate
 GET    /api/v1/rooms/:id/climate/history?window=1h|6h|24h|7d[&density=N]
 ```
 
+`PUT /api/v1/users/me` — accepts `{ "timezone": string }` (IANA timezone string).
+Validates via `time.LoadLocation`. Returns 204 on success. Pointer field — nil means
+not provided, skip. Additional profile fields added here in future phases.
+
+`GET /rooms` and `GET /rooms/:id` — both include a nested `capabilities` object:
+```json
+{ "capabilities": { "temperature": true, "humidity": false } }
+```
+Temperature capability = temperature sensor + heater both assigned to the room.
+Humidity capability = humidity sensor + humidifier both assigned. EXISTS + EXISTS
+pattern in `room.Repository`. Bulk query for list endpoint, per-room for detail.
+`RoomCapabilities` and `RoomWithCapabilities` types defined in `room` package.
+`HasTemperatureCapability` and `HasHumidityCapability` delegate to `RoomCapabilities`
+to keep SQL in one place.
+
 `/climate` — current snapshot sourced from the most recent `room_control_logs` row.
-Returns `null` body (200) if the room has no data yet. Fields: `time`, `avg_temp`,
-`avg_hum`, `mode`, `target_temp`, `target_hum`, `control_source`, `heater_cmd`
-(bool or null), `humidifier_cmd` (bool or null), `deadband_temp`, `deadband_hum`.
+Returns 204 (no body) if the room has no data yet — valid no-data state, not an error.
+Fields: `time`, `avg_temp`, `avg_hum`, `mode`, `target_temp`, `target_hum`,
+`control_source`, `heater_cmd` (bool or null), `humidifier_cmd` (bool or null),
+`deadband_temp`, `deadband_hum`.
 
 `/climate/history` — array of time-bucketed objects from `room_control_logs`.
 Response shape:
@@ -902,8 +929,10 @@ chars) → immediate `POST /auth/login` with same credentials →
 registration — UTC default with `TimezonePrompt` banner on dashboard.
 
 **`TimezonePrompt`:** Shown when `user.timezone === 'UTC'`. Auto-detects
-browser timezone. Dismissed state persisted to localStorage under
-`cc-timezone-prompt-dismissed`. `onSave` prop wired in 6b.
+browser timezone. `onSave` calls `PUT /users/me` then mutates useUser
+SWR cache. Dismissed state persisted to localStorage under
+`cc-timezone-prompt-dismissed`. Note: dismiss key is not per-user —
+acceptable for single-user self-hosted context.
 
 **Helpers (`src/lib/helpers.js`):** `timeAgo`, `fmtTime12`, `fmtMin12`,
 `fmtTick12` — all use `Intl.DateTimeFormat` with user's IANA timezone
@@ -913,13 +942,6 @@ browser timezone. Dismissed state persisted to localStorage under
 code patterns — the `window.*` global pattern, raw SVG charts, and
 module structure do not apply to the production app. Use mockup for
 visual structure, CSS class usage, and interaction states only.
-
-**Backend changes required before Phase 6c (do not block 6a/6b):**
-- Desired state schema: add `manual_active BOOLEAN NOT NULL DEFAULT false`
-  and `manual_mode TEXT` columns. Targets persist independently of Hold.
-  Control loop derives mode from `manual_active` + expiry check.
-- `PUT /api/v1/users/me`: accepts `{ timezone: string }` (IANA).
-  Required for Account settings modal and TimezonePrompt save.
 
 **Navigation structure:**
 ```
@@ -933,20 +955,96 @@ Login / Register
     └── Devices page         (all devices, inline room assignment)
 ```
 
+**Tab routing:** local `useState` only — URL stays `/rooms/:id` regardless
+of active tab. No nested routes under `/rooms/:id`.
+
 **SWR polling intervals:**
-- Dashboard + overview tab: 30s
+- Dashboard room list + per-card climate: 30s
 - History tab: 60s + `revalidateOnFocus: true`
 - On-demand hooks (room detail, schedules, devices): no polling
 
-**Capability-aware rendering:** uses sensor/actuator lists from
-`GET /rooms/:id` to determine which controls render. Structural null
-(no device) vs transient null (device exists, no reading) are distinct.
+**SWR hooks inventory:**
+- `useUser` — `GET /users/me`, no polling, exposes `mutate`
+- `useRooms` — `GET /rooms`, 30s polling, exposes `mutate`
+- `useRoom(roomId)` — `GET /rooms/:id`, no polling, exposes `mutate`
+- `useClimate(roomId)` — `GET /rooms/:id/climate`, 30s polling, custom
+  fetcher handles 204 as null (valid no-data state)
+- `useSchedules(roomId)` — `GET /rooms/:id/schedules`, no polling
+
+**Capability-aware rendering:**
+- Capabilities come from `room.capabilities.temperature` and
+  `room.capabilities.humidity` on the room object — not inferred from
+  climate readings. Temperature capability = sensor + heater. Humidity
+  capability = sensor + humidifier.
+- Dashboard cards: `ClimateReading` null fields used for `—` display.
+  No capability logic needed at the card level.
+- Overview current state card: actuator rows always render — null
+  `heater_cmd`/`humidifier_cmd` shows `—`, not hidden.
+- Control panel: capability-aware greying deferred to 6c when real
+  desired state data is wired in.
+
+**Always-show rendering philosophy:**
+Components render all rows and sections regardless of data availability.
+Null values show `—`. Unavailable states grey out via `cc-row--disabled`
+or `opacity: 0.5`. No conditional hiding that causes layout shifts.
+CSS grid with `minmax()` or proportional `fr` units preferred over
+flexbox with fixed gaps — handles responsive reflow without awkward
+whitespace.
 
 **Control source label mapping:**
-- `manual_override` → "Hold active"
+- `manual_override` → "Manual" (not "Hold active" — "Hold" terminology
+  dropped entirely from the UI)
 - `schedule` → "Schedule"
 - `grace_period` → "Grace period"
-- `none` → "Idle"
+- `none` → source row shows "None" in muted style, no badge variant
+
+**Control panel design (OverviewTab card 2):**
+Two top-level states driven by "Control type" segmented control:
+- "Schedule" — schedule section active, manual settings section greyed
+- "Manual" — manual settings active, schedule section shows "Overridden
+  by manual"
+Mode (OFF/AUTO) and capability rows are subordinate to Control type.
+Capability rows use `cc-togdot`, `cc-input cc-input--mono`, and
+`cc-dbpill` to visually imply interactivity even in the 6b shell.
+Apply/Revert buttons disabled in 6b shell — wired in 6c.
+Draft state initialised from placeholder values in 6b — replaced with
+real desired state data in 6c after schema migration.
+
+**Button conventions:**
+- Title case throughout: "Add Room", "Delete Room", "Log Out",
+  "Save Timezone", "Create Room", etc.
+- Action buttons include relevant lucide-react icon where appropriate
+  (Plus for add actions, etc.)
+
+**Modals:**
+- `cc-modal-bg` overlay + `cc-modal` pattern throughout
+- Overlay click closes modal, inner card click does not (stopPropagation)
+- Enter key submits single-input modals
+- 409 conflicts surface specific error messages, other errors show
+  generic "Something went wrong."
+- Successful mutations call `mutate()` on relevant SWR hooks immediately
+  — no waiting for next poll interval
+
+**Backend changes required before Phase 6c:**
+- Desired state schema migration: add `manual_active BOOLEAN NOT NULL
+  DEFAULT false` and `manual_mode TEXT` columns. Targets persist
+  independently of whether manual control is active. Control loop
+  derives mode from `manual_active` + expiry check.
+- `useDesiredState(roomId)` hook — `GET /rooms/:id/desired-state`
+- Replace `ControlPanelShell` placeholder useState values with real
+  desired state data. Wire Apply → `PUT /rooms/:id/desired-state`.
+  Wire Revert → reset draft to desired state values.
+- When replacing useState placeholders, use `useEffect` to sync draft
+  when desired state loads — `useState` only initialises once per mount.
+- Capability-aware greying in control panel rows (no heater → temp row
+  greyed regardless of mode).
+
+**Deferred to 6g:**
+- Timezone picker in Account Settings modal (full curated IANA selector
+  with friendly labels grouped by UTC offset — ~40 entries, no external
+  library needed).
+- Loading skeletons across all pages.
+- Empty states across all pages.
 
 ---
 

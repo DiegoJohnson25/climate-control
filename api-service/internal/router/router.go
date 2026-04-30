@@ -37,6 +37,7 @@ func Setup(
 
 	protected.POST("/auth/logout", authHandler.Logout)
 	protected.GET("/users/me", userHandler.Me)
+	protected.PUT("/users/me", userHandler.UpdateMe)
 	protected.DELETE("/users/me", userHandler.DeleteMe)
 
 	// Rooms

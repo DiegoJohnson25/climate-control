@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { Eye, EyeOff } from 'lucide-react'
 import { useAuth } from '../api/auth.jsx'
 
 // ---------------------------------------------------------------------------
@@ -15,6 +16,8 @@ export default function RegisterPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
+  const [showConfirm, setShowConfirm] = useState(false)
   const [error, setError] = useState(null)
   const [loading, setLoading] = useState(false)
 
@@ -113,27 +116,61 @@ export default function RegisterPage() {
 
             <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               <span className="cc-label">Password</span>
-              <input
-                className="cc-input"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                onKeyDown={handleKeyDown}
-                autoComplete="new-password"
-              />
+              <div style={{ position: 'relative', width: '100%' }}>
+                <input
+                  className="cc-input"
+                  type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  autoComplete="new-password"
+                  style={{ paddingRight: 36 }}
+                />
+                <button
+                  type="button"
+                  className="cc-iconbtn"
+                  onClick={() => setShowPassword((v) => !v)}
+                  style={{
+                    position: 'absolute',
+                    right: 4,
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    color: 'var(--cc-fg-3)',
+                  }}
+                >
+                  {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+                </button>
+              </div>
               <span className="cc-meta">Minimum 4 characters</span>
             </label>
 
             <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               <span className="cc-label">Confirm password</span>
-              <input
-                className={`cc-input${passwordMismatch ? ' cc-input--error' : ''}`}
-                type="password"
-                value={confirm}
-                onChange={(e) => setConfirm(e.target.value)}
-                onKeyDown={handleKeyDown}
-                autoComplete="new-password"
-              />
+              <div style={{ position: 'relative', width: '100%' }}>
+                <input
+                  className={`cc-input${passwordMismatch ? ' cc-input--error' : ''}`}
+                  type={showConfirm ? 'text' : 'password'}
+                  value={confirm}
+                  onChange={(e) => setConfirm(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  autoComplete="new-password"
+                  style={{ paddingRight: 36 }}
+                />
+                <button
+                  type="button"
+                  className="cc-iconbtn"
+                  onClick={() => setShowConfirm((v) => !v)}
+                  style={{
+                    position: 'absolute',
+                    right: 4,
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    color: 'var(--cc-fg-3)',
+                  }}
+                >
+                  {showConfirm ? <EyeOff size={15} /> : <Eye size={15} />}
+                </button>
+              </div>
               {passwordMismatch && (
                 <span style={{ fontSize: 'var(--cc-fs-xs)', color: 'var(--cc-danger-fg)' }}>
                   Passwords do not match
@@ -162,7 +199,7 @@ export default function RegisterPage() {
               disabled={!canSubmit}
               style={{ marginTop: 6, height: 36 }}
             >
-              {loading ? 'Creating account…' : 'Create account'}
+              {loading ? 'Creating Account…' : 'Create Account'}
             </button>
           </div>
         </div>

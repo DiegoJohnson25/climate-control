@@ -117,8 +117,10 @@ For full operational documentation — environment variables, scaling, debug fla
 | 1–4c | Repo scaffold, full REST API, Control Service, Simulator, CI, reactive room model | ✅ Done |
 | 5a | Climate history endpoints (`GET /rooms/:id/climate/history`) | ✅ Done |
 | 5b | NGINX reverse proxy, load balancing, horizontal scaling | ✅ Done |
-| 6a | React SPA scaffold — auth flow, routing, SWR setup | 🔄 In progress |
-| 6b–6e | Dashboard, room detail, history charts, schedules, device management | Planned |
+| 6a | React SPA scaffold — auth flow, routing, SWR setup | ✅ Done |
+| 6b | Dashboard room cards, room detail, overview tab, SWR hooks, room capabilities | ✅ Done |
+| 6c | Desired state schema migration, control panel wiring | 🔄 In progress |
+| 6d–6e | History charts, schedules, device management | Planned |
 | 7a | Kafka Bridge service, Kafka cluster | Planned |
 | 7b | Control Service Kafka source, partition ownership, Kafka-routed invalidation | Planned |
 | 8 | Full CI suite, architecture diagrams, README, one-command startup | Planned |

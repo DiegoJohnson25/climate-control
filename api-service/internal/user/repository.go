@@ -55,3 +55,10 @@ func (r *Repository) GetByID(ctx context.Context, id uuid.UUID) (*models.User, e
 func (r *Repository) Delete(ctx context.Context, id uuid.UUID) error {
 	return r.db.WithContext(ctx).Delete(&models.User{}, id).Error
 }
+
+// UpdateTimezone sets the IANA timezone string for the given user.
+func (r *Repository) UpdateTimezone(ctx context.Context, id uuid.UUID, timezone string) error {
+	return r.db.WithContext(ctx).Model(&models.User{}).
+		Where("id = ?", id).
+		Update("timezone", timezone).Error
+}
