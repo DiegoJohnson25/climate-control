@@ -5,7 +5,7 @@ inventory, auth token handling, API call patterns, and component detail.
 
 For architecture overview and design decisions see [`client.md`](client.md).
 
-**Status:** Phase 6b complete. Phase 6c in progress.
+**Status:** Phase 6c complete. Phase 6d in progress.
 
 ---
 
@@ -17,19 +17,22 @@ web-client/
 │   ├── api/
 │   │   ├── auth.jsx       # token store, AuthContext, doRefresh, useAuth
 │   │   ├── fetcher.js     # SWR global fetcher, 401 intercept, retry
+│   │   ├── rooms.js       # updateDesiredState() — imperative PUT helper
 │   │   └── users.js       # updateMe() — imperative fetch helper for PUT /users/me
 │   ├── components/
 │   │   ├── Nav.jsx               # sticky nav, theme toggle, user email, user menu
 │   │   ├── ProtectedRoute.jsx    # silent refresh on mount, redirects to /login
 │   │   ├── RoomCard.jsx          # dashboard room card, independent climate fetch
 │   │   ├── TimezonePrompt.jsx    # dismissible UTC timezone setup banner
+│   │   ├── TolerancesModal.jsx   # shared tolerances modal, showHints prop
 │   │   └── ui/                   # populated by npx shadcn add as needed
 │   ├── hooks/
-│   │   ├── useUser.js        # GET /users/me
-│   │   ├── useRooms.js       # GET /rooms, 30s polling
-│   │   ├── useRoom.js        # GET /rooms/:id
-│   │   ├── useClimate.js     # GET /rooms/:id/climate, 30s polling, 204 handling
-│   │   └── useSchedules.js   # GET /rooms/:id/schedules
+│   │   ├── useUser.js          # GET /users/me
+│   │   ├── useRooms.js         # GET /rooms, 30s polling
+│   │   ├── useRoom.js          # GET /rooms/:id
+│   │   ├── useClimate.js       # GET /rooms/:id/climate, 30s polling, 204 handling
+│   │   ├── useDesiredState.js  # GET /rooms/:id/desired-state, revalidateOnFocus: false
+│   │   └── useSchedules.js     # GET /rooms/:id/schedules
 │   ├── lib/
 │   │   ├── helpers.js     # timeAgo, fmtTime12, fmtMin12, fmtTick12
 │   │   └── utils.js       # shadcn cn() helper
@@ -40,7 +43,7 @@ web-client/
 │   │   ├── RoomDetailPage.jsx
 │   │   ├── DevicesPage.jsx        # placeholder until 6f
 │   │   └── tabs/
-│   │       └── OverviewTab.jsx    # current state card + control panel shell
+│   │       └── OverviewTab.jsx    # current state card + fully wired control panel
 │   ├── styles/
 │   │   └── tokens.css     # --cc-* tokens + cc-* component classes
 │   ├── App.jsx            # router, SWRConfig, AuthProvider, ThemeProvider
@@ -178,12 +181,16 @@ async (url) => {
 
 `src/api/users.js` — imperative fetch for `PUT /users/me`. Used by
 `DashboardPage` to save timezone from `TimezonePrompt`. Not a SWR hook — called
-directly in event handlers. Must attach Authorization header manually since it
-bypasses the SWR fetcher.
+directly in event handlers.
+
+`src/api/rooms.js` — imperative fetch for `PUT /rooms/:id/desired-state`.
+Used by `ControlPanel` Apply handler. Parses the error response body and attaches
+`.status` to thrown errors so callers can distinguish 422 validation failures from
+500s:
 
 ```js
-export async function updateMe(payload) {
-  const res = await fetch('/api/v1/users/me', {
+export async function updateDesiredState(roomId, payload) {
+  const res = await fetch(`/api/v1/rooms/${roomId}/desired-state`, {
     method: 'PUT',
     credentials: 'include',
     headers: {
@@ -192,14 +199,18 @@ export async function updateMe(payload) {
     },
     body: JSON.stringify(payload),
   })
-  if (!res.ok) throw new Error(res.status)
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    const err = new Error(body.error || res.status)
+    err.status = res.status
+    throw err
+  }
 }
 ```
 
-All other write operations (rename, delete, add room) are implemented as inline
-`fetch` calls in their respective components rather than extracted helpers — only
-`updateMe` is extracted because it is shared between `DashboardPage` and will be
-used by the Account Settings modal in 6g.
+All other write operations use inline `fetch` calls in their respective components.
+`updateMe` and `updateDesiredState` are extracted because they are shared across
+multiple components.
 
 ---
 
@@ -211,12 +222,12 @@ used by the Account Settings modal in 6g.
 | `useRooms` | `hooks/useRooms.js` | `GET /rooms` | 30s | yes |
 | `useRoom(roomId)` | `hooks/useRoom.js` | `GET /rooms/:id` | none | yes |
 | `useClimate(roomId)` | `hooks/useClimate.js` | `GET /rooms/:id/climate` | 30s | no |
+| `useDesiredState(roomId)` | `hooks/useDesiredState.js` | `GET /rooms/:id/desired-state` | none | yes |
 | `useSchedules(roomId)` | `hooks/useSchedules.js` | `GET /rooms/:id/schedules` | none | no |
 
-Hooks that expose `mutate` do so because there are write operations in the app
-that need to invalidate that cache immediately. `useClimate` does not expose
-`mutate` — climate data reflects control loop output, not direct user writes, so
-immediate invalidation after a write would return stale data anyway.
+`useDesiredState` uses `revalidateOnFocus: false` — desired state only changes on
+explicit user action. Focus revalidation would clobber unsaved draft changes.
+Revalidates only after a successful Apply via `mutateDesiredState()`.
 
 ---
 
@@ -225,88 +236,50 @@ immediate invalidation after a write would return stale data anyway.
 ```
 /login                          LoginPage
 /register                       RegisterPage
-/                               → redirect to /dashboard
 /dashboard                      DashboardPage
-/rooms/:id                      RoomDetailPage
-/devices                        DevicesPage (placeholder until 6f)
+/rooms/:id                      RoomDetailPage (tab state local)
+/devices                        DevicesPage (placeholder)
+/                               redirect → /dashboard
 ```
-
-All routes except `/login` and `/register` are wrapped in `ProtectedRoute`.
 
 ---
 
 ## Component detail
 
-### Nav.jsx
+### TolerancesModal.jsx
 
-Sticky 56px top bar. Brand mark (Thermometer icon + "Climate Control" text),
-Dashboard/Devices nav links with active underline indicator, theme toggle
-(Sun/Moon icon), user menu dropdown.
+Shared modal component for editing room deadband tolerances. Used in two contexts:
 
-User menu shows user email from `useUser` with truncation (`maxWidth: 160`,
-`overflow: hidden`, `textOverflow: ellipsis`, `whiteSpace: nowrap`). Avatar
-initial derived from `user?.email?.[0]?.toUpperCase()`. Falls back to `'U'`
-and `'Account'` while user loads.
+**From `ControlPanel` dbpills** — `showHints={true}`. Hint text shows live
+switching thresholds computed from draft targets:
+`"Heater turns on below X°C, off above Y°C"`. Hints suppressed when the field
+has a validation error (hint and error would conflict). `tempTarget`/`humTarget`
+props come from the live draft state.
 
-Kebab close on outside click via `useEffect` + `mousedown` listener — same
-pattern as `RoomDetailPage` kebab.
+**From `RoomDetailPage` kebab** — `showHints={false}`. No hints — draft targets
+are not available in that context. Pre-fills from `room.deadband_temp` and
+`room.deadband_hum`.
 
-Logout calls `POST /auth/logout` best-effort (fire-and-forget in try/catch),
-then calls `logout()` from `useAuth` regardless of server response.
+Both callers handle the `onSave` PUT inline — `TolerancesModal` receives
+`onSave({ deadband_temp, deadband_hum })` and calls it on successful validation.
+Callers are responsible for the fetch and `mutateRoom()`.
 
-### ProtectedRoute.jsx
+Validated ranges: temperature 0.1–10.0°C, humidity 0.5–20.0%.
 
-Attempts silent refresh on mount via `doRefresh()`. Lazy `useState` initializer
-avoids synchronous setState-in-effect lint violation. Renders null while checking.
-Redirects to `/login` on failure. Empty dependency array intentional — mount-only.
-
-### TimezonePrompt.jsx
-
-Shown when `user?.timezone === 'UTC'`. Auto-detects browser timezone via
-`Intl.DateTimeFormat().resolvedOptions().timeZone`. Curated list of ~27 IANA
-timezones in a `<select>`. Save button disabled when selected equals current
-timezone. `onSave` calls `updateMe({ timezone })` then `mutate()` from `useUser`.
-Dismissed state in localStorage under `cc-timezone-prompt-dismissed`.
-
-Note: dismiss key is not per-user — acceptable for single-user self-hosted
-deployment. Full timezone picker with grouped UTC offset labels deferred to 6g
-Account Settings modal.
+Modal state is consolidated into a single object to satisfy the
+`react-hooks/set-state-in-effect` lint rule. Reinitialised on `[open, room]`
+effect. `resetCount` is a separate `useState` incremented on open to force input
+remount via `key` prop.
 
 ### RoomCard.jsx
 
-Dashboard card for a single room. Independently calls `useClimate(room.id)` at
-30s. Hover state via `useState` — border strengthens, shadow lifts,
-`translateY(-1px)`.
-
-Card uses `display: flex, flex-direction: column, height: 100%` so the bottom
-badge section is always pinned to the bottom regardless of content. Grid uses
-`align-items: stretch` so cards in the same row reach equal height.
-
-**Top section (flex 1):** room name + mode badge row, then temp + humidity
-readouts side by side. Readouts use `cc-readout-sm` with heat/cool color tokens.
-`—` shown when climate is null or reading is null.
-
-**Bottom section (margin-top auto):** always renders, may be empty. Contains:
-- Heater badge — only if `climate?.heater_cmd !== null`. `cc-badge--heat` when on.
-- Humidifier badge — only if `climate?.humidifier_cmd !== null`. `cc-badge--cool`
-  when on.
-- Control source badge — only when source is `manual_override`, `schedule`, or
-  `grace_period`. Omitted when `none`. Uses `cc-badge` base + inline color
-  overrides since `--cc-hold-border` and `--cc-grace-border` are not defined as
-  CSS variables.
-
-Mode badge: `cc-badge cc-badge--ok` for AUTO, `cc-badge` base for OFF.
+Card used in the dashboard grid. Fetches its own climate data via `useClimate`
+(30s polling) — independent per card. Flex-column layout with bottom section
+pinned via `margin-top: auto`.
 
 ### DashboardPage.jsx
 
 Fetches room list via `useRooms` (30s). Renders `TimezonePrompt` at top.
-Renders room grid below — `repeat(auto-fill, minmax(280px, 1fr))`, `gap: 16px`,
-`align-items: stretch`.
-
-Page header always renders (room count + Add Room button) regardless of loading
-or empty state. Room grid renders nothing while loading or when rooms is empty —
-proper loading/empty states deferred to 6g.
-
 Add Room modal — `POST /rooms` with `{ name }` only (deadbands defaulted
 server-side). 409 → "A room with that name already exists." Calls `mutateRooms()`
 on 201.
@@ -315,62 +288,63 @@ on 201.
 
 Reads `roomId` from `useParams()`. Fetches room via `useRoom(roomId)`.
 
-Tab state: `useState('overview')`. Tab bar uses an absolutely positioned 2px div
-for the active underline indicator (bottom: -1px to overlap the tab bar border).
+Tab state: `useState('overview')`.
 
-Header: cc-h1 room name + pencil `cc-iconbtn` for rename + kebab menu. Kebab
-closes on outside click via `useEffect` mousedown listener.
+Header: room name + pencil `cc-iconbtn` for rename + kebab menu. Kebab closes on
+outside click via `useEffect` mousedown listener.
+
+**Kebab actions:** Edit Name, Edit tolerances, Delete Room. "Edit tolerances"
+opens `TolerancesModal` with `showHints={false}`.
 
 **Rename modal:** pre-fills `renameValue` with `room?.name`. PUT sends full room
-body (name + existing deadbands) since PUT is full replacement. 409 → specific
-error. Calls `mutateRoom()` on success.
+body (name + existing deadbands). 409 → specific error. Calls `mutateRoom()`.
 
-**Delete modal:** confirmation copy includes room name. DELETE calls
-`mutateRooms()` then navigates to `/dashboard` on success.
+**Tolerances modal (from kebab):** pre-fills from `room.deadband_temp`/`room.deadband_hum`.
+PUT sends full room body (existing name + new deadbands). Calls `mutateRoom()`.
 
-Both modals: overlay click closes, `stopPropagation` on inner card, Enter key
-submits (rename only), `autoFocus` on input.
+**Delete modal:** confirmation includes room name. DELETE calls `mutateRooms()`
+then navigates to `/dashboard`.
+
+Props passed to `OverviewTab`: `roomId`, `capabilities`, `room`, `mutateRoom`.
 
 ### OverviewTab.jsx
 
-Props: `roomId` (string).
+Props: `roomId`, `capabilities`, `room`, `mutateRoom`.
 
-Calls `useClimate(roomId)` and `useSchedules(roomId)`.
+Calls `useClimate(roomId)`. Renders two cards in a CSS grid with
+`align-items: stretch` so both cards reach equal height.
 
-**Card 1 — Current state:**
-- Header: "Current state" label + live indicator dot (green within 5 min,
-  amber if stale, grey if no data — computed from `climate?.time` vs `Date.now()`)
-- Readout grid: 2-column, Temperature left / Humidity right. Each column has a
-  label row (icon + cc-meta text) above a `cc-readout` span with heat/cool color.
-  Unit as inline `0.45em` span inside the readout.
-- Actuator section: always renders. Heater row + Humidifier row. Each: icon +
-  label + ON/OFF mono text. `—` when climate null or cmd null.
-- Source + mode row: always renders. Source badge always present — "None" in
-  neutral style when source is `none`/null. Mode badge only when source is
-  `manual_override`, `schedule`, or `grace_period`.
-- Targets section: always renders as 2-column grid. Each column: cc-meta label
-  + mono value with inline deadband. `—` in `--cc-fg-4` when null.
+**Card 1 — CurrentStateCard:**
+- Live/Stale/No data indicator dot computed from `climate?.time`
+- Temperature + humidity readouts
+- Heater + humidifier command rows — always rendered, `—` when null
+- Active source badge + mode badge
+- Target temperature + humidity with inline deadband display
+- Deadband values sourced from `climate` snapshot (historical record)
 
-**Card 2 — Control panel shell (ControlPanelShell):**
-
-Local state: `controlType` ('schedule'/'manual'), `mode` ('OFF'/'AUTO'),
-`tempTarget` (22.0 placeholder), `humTarget` (50.0 placeholder).
-
-- Control type row: "Control type" label + `cc-seg` with Schedule/Manual buttons
-- Schedule section: section label + bordered surface-2 box with status dot,
-  schedule name (or "No active schedule"), "Overridden by manual" meta when
-  `isManual`. Box dims to `opacity: 0.5` when `isManual`.
-- Manual settings section: section label with "Schedule active" note when
-  `!isManual`. Entire section body at `opacity: 0.5` when `!isManual`.
-  - Mode row: `cc-seg` OFF/AUTO, `cc-seg--disabled` when `!isManual`
-  - Capability rows: `cc-row` + `cc-row--disabled` when `manualRowDisabled`
-    (`!isManual || !isAuto`). Each row: `cc-togdot` + icon + label + `cc-input
-    cc-input--mono` (disabled) + `cc-dbpill` (cursor default, no onClick).
-- Footer: disabled Revert + Apply buttons + "Control panel coming soon" meta note.
-
-Placeholder values replaced with real desired state data in 6c after schema
-migration. `useEffect` will be required to sync draft state when desired state
-loads.
+**Card 2 — ControlPanel:**
+- Draft state: `controlType`, `mode`, `tempTarget` (float|null),
+  `humTarget` (float|null), `tempEnabled`, `humEnabled`
+- Separate error state: `tempTargetError`, `humTargetError`
+- `resetCount` — `useRef`, incremented on Revert and `useEffect` reinit to force
+  uncontrolled input remount
+- `isDirty` — compares draft against `desiredState`; gates Apply and Revert
+- Control type seg → `manual_active`
+- Mode seg → `mode`; tooltip explains disabled state
+- Capability rows — togdot and content opacity are independent:
+  - `tempHardDisabled` = `!capabilities.temperature || !isManual || !isAuto`
+  - `tempContentDim` = `tempHardDisabled || !tempEnabled`
+  - Togdot: `cc-togdot--disabled` when hard-disabled, `cc-togdot--on` when enabled,
+    base (white) when available but not enabled
+- Target inputs: uncontrolled (`defaultValue`), blur validation (5–40°C, 10–90%)
+- Deadband pills: `cursor: pointer`, `onClick` opens `TolerancesModal`.
+  Source: `room.deadband_temp`/`room.deadband_hum` — not climate snapshot —
+  so pills update immediately after tolerances save via `mutateRoom()`
+- Apply: validates, builds payload, calls `updateDesiredState`, then
+  `mutateDesiredState()`. 422 responses surface API error message.
+- Revert: resets draft to current `desiredState` values, increments `resetCount`
+- `TolerancesModal` rendered with `showHints={true}`, `onSave` calls
+  `PUT /rooms/:id` inline then `mutateRoom()`
 
 ---
 
@@ -419,10 +393,10 @@ same file and are globally available.
 | `cc-input--mono` | Mono font input (for numeric values) |
 | `cc-seg` | Segmented control container |
 | `cc-seg--disabled` | Disabled segmented control |
-| `cc-togdot` | Toggle dot |
+| `cc-togdot` | Toggle dot — base state (white/neutral, clickable) |
 | `cc-togdot--on` | Active toggle dot |
-| `cc-togdot--disabled` | Disabled toggle dot |
-| `cc-dbpill` | Deadband pill with dashed border |
+| `cc-togdot--disabled` | Disabled toggle dot (grey, not clickable) |
+| `cc-dbpill` | Deadband pill with dashed border — clickable, opens TolerancesModal |
 | `cc-row` | Flex row, align-items center, gap 12, min-height 32 |
 | `cc-row--disabled` | Greyed row (opacity 0.5) |
 | `cc-statusdot` | 8px status indicator dot |
@@ -432,6 +406,8 @@ same file and are globally available.
 | `cc-modal-head` | Modal header with border-bottom |
 | `cc-modal-body` | Modal scrollable body |
 | `cc-modal-foot` | Modal footer with border-top, surface-2 background |
+| `cc-tooltip` | Tooltip wrapper — shows `data-tooltip` text above element on hover |
+| `cc-tooltip--right` | Modifier — anchors tooltip to right edge instead of centering |
 
 ---
 
@@ -501,3 +477,43 @@ useEffect(() => {
   return () => document.removeEventListener('mousedown', onMouseDown)
 }, [open])
 ```
+
+### Uncontrolled numeric input with reset key
+
+```jsx
+const resetCount = useRef(0)
+
+// On reset (Revert or useEffect reinit):
+resetCount.current += 1
+
+// In JSX:
+<input
+  key={`field-name-${resetCount.current}`}
+  className="cc-input cc-input--mono"
+  defaultValue={value != null ? value.toFixed(1) : ''}
+  onBlur={e => { /* validate and update float state */ }}
+  style={{ borderColor: error ? 'var(--cc-danger)' : undefined }}
+/>
+```
+
+### Tooltip usage
+
+```jsx
+<div
+  className="cc-tooltip"
+  data-tooltip={tooltip || undefined}
+>
+  {/* content */}
+</div>
+
+// Right-aligned variant (for elements near the right edge of a card):
+<div
+  className="cc-tooltip cc-tooltip--right"
+  data-tooltip={tooltip || undefined}
+>
+  {/* content */}
+</div>
+```
+
+Setting `data-tooltip={undefined}` (not an empty string) suppresses the tooltip
+entirely — the `::after` pseudo-element only renders when the attribute is present.

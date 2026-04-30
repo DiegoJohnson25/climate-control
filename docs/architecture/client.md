@@ -4,7 +4,7 @@ React SPA served as static files by NGINX. Consumes the API Server REST API via
 NGINX proxy. All API calls use `credentials: "include"` so the httpOnly refresh
 cookie is sent automatically.
 
-**Status:** Phase 6b complete. Phase 6c in progress.
+**Status:** Phase 6c complete. Phase 6d in progress.
 
 ---
 
@@ -59,7 +59,7 @@ retry logic manually — see `useClimate`.
 Login / Register
 └── Dashboard (room cards grid)
       ├── Room detail (tabbed)
-      │     ├── Overview     current state card + control panel shell
+      │     ├── Overview     current state card + control panel
       │     ├── History      stacked climate charts, window selector
       │     ├── Schedules    schedule list, inline period accordion, period modal
       │     └── Devices      full management
@@ -81,9 +81,10 @@ active tab. No nested routes under `/rooms/:id`.
 |---|---|---|---|
 | `useUser` | `GET /users/me` | none | Exposes `mutate` — called after `PUT /users/me` |
 | `useRooms` | `GET /rooms` | 30s | Exposes `mutate` — called after room create/delete |
-| `useRoom(roomId)` | `GET /rooms/:id` | none | Exposes `mutate` — called after rename |
+| `useRoom(roomId)` | `GET /rooms/:id` | none | Exposes `mutate` — called after rename, deadband save |
 | `useClimate(roomId)` | `GET /rooms/:id/climate` | 30s | Custom fetcher — handles 204 as null |
-| `useSchedules(roomId)` | `GET /rooms/:id/schedules` | none | Used by control panel shell |
+| `useSchedules(roomId)` | `GET /rooms/:id/schedules` | none | Used by control panel |
+| `useDesiredState(roomId)` | `GET /rooms/:id/desired-state` | none | `revalidateOnFocus: false` — prevents draft clobber. Exposes `mutate` — called after Apply |
 
 All hooks that expose `mutate` call it immediately after a successful write so the
 UI reflects changes without waiting for the next poll interval.
@@ -114,7 +115,9 @@ checks needed at the card level.
 **Overview current state card:** actuator rows always render. `heater_cmd: null`
 shows `—` for the status, not a hidden row.
 
-**Control panel:** capability-aware greying of input rows deferred to 6c.
+**Control panel:** capability-aware greying of input rows. Togdot and content
+opacity are independent — the togdot is never dimmed by content state so it
+remains visually clickable even when the row is otherwise greyed.
 
 ---
 
@@ -149,9 +152,37 @@ Mode (OFF/AUTO) is subordinate to Control type — only relevant when Manual is
 selected. Capability rows (temperature, humidity) are subordinate to mode — only
 interactive when Manual + AUTO.
 
-This maps to `manual_active` (Control type toggle) and `mode`/targets in the
-`desired_states` table. In 6b the control panel is a visual shell with placeholder
-draft state — fully wired in 6c after the schema migration.
+Each capability row has an independent enable/disable toggle (the `cc-togdot`).
+When a capability is available but the user does not want to regulate it, the
+togdot is white (base state) and clickable even while the rest of the row is
+greyed. This communicates that the row is intentionally inactive, not broken.
+
+**`isDirty` gate:** Apply and Revert are only enabled when the draft differs from
+the saved desired state. The Apply button uses `cc-btn--primary` (filled) when
+dirty and `cc-btn--ghost` (outlined) when clean — only looks actionable when
+there is something to send.
+
+**Draft initialisation:** `useEffect` with `[desiredState]` dep populates the
+draft when `useDesiredState` first resolves. `revalidateOnFocus: false` on the
+hook prevents SWR from revalidating on tab-away, which would clobber unsaved
+draft changes.
+
+**Apply payload:** targets are sent as null only when the user has explicitly
+toggled that capability off (`tempEnabled`/`humEnabled = false`). Mode and control
+type do not affect whether target values are preserved — this ensures saved
+preferences survive switching between Schedule and Manual or between AUTO and OFF.
+
+**Validation:** target inputs and tolerance inputs validate on blur. Red outline
++ error message appear when the field loses focus with an invalid value. Apply is
+blocked if any validation errors are present.
+
+**Tolerances modal:** accessible from the `cc-dbpill` elements in the control
+panel (with live threshold hints computed from draft targets) and from "Edit
+tolerances" in the room detail kebab menu (without hints). Title: "Tolerances".
+Subtitle: "Wider tolerances save energy but allow more drift."
+
+This maps to `manual_active` (Control type toggle), `mode`, and targets in the
+`desired_states` table.
 
 ---
 
@@ -214,6 +245,21 @@ inner card click does not (stopPropagation). Enter key submits single-input moda
 409 conflicts show specific error messages. Successful mutations call `mutate()`
 on relevant SWR hooks immediately.
 
+**Tooltip utility classes:**
+- `cc-tooltip` — adds a CSS `::after` pseudo-element tooltip anchored above the
+  element, centered horizontally. Applied via `data-tooltip="..."` attribute.
+  Only renders when `data-tooltip` is present — safe to set to `undefined` when
+  no tooltip is needed.
+- `cc-tooltip--right` — modifier that anchors the tooltip to the right edge of
+  the element instead of centering. Used for right-aligned controls (e.g. the
+  mode seg control) where a centered tooltip would clip off the card edge.
+
+**Uncontrolled numeric inputs:** inputs that require stable cursor position during
+typing use `defaultValue` instead of `value`. Programmatic resets (Revert, draft
+reinit) use a `key` prop tied to a `useRef` counter (`resetCount.current`). The
+counter is incremented on each reset, forcing React to remount the input with the
+new `defaultValue`.
+
 ---
 
 ## Key design decisions
@@ -251,20 +297,42 @@ indicate missing data, not missing hardware. Capability comes from the
 `capabilities` object on the room response, which is derived from the actual device
 graph in the database.
 
+**`revalidateOnFocus: false` on `useDesiredState`** — desired state only changes
+on explicit user action. Focus revalidation would clobber unsaved draft changes if
+the user tabs away while editing. The hook revalidates only after a successful
+Apply via `mutateDesiredState()`.
+
+**Targets preserved across mode and control type changes** — the Apply payload
+only nulls a target when the user has explicitly toggled that capability off.
+Switching from Manual to Schedule, or from AUTO to OFF, preserves the saved target
+values in the database. The control loop only reads them when `manual_active` is
+true and mode is AUTO — storing them alongside other states is intentional.
+
+**Deadband pills read from `room` object, not climate snapshot** — `climate`
+includes deadband values snapshotted at tick time, but deadbands are a room
+property. Reading from `room` means the pills update immediately after a
+tolerances save via `mutateRoom()`, without waiting for the next climate poll.
+
+**Tolerances modal accessible from two entry points** — dbpills in the control
+panel open the modal with live threshold hints (computed from draft targets).
+The room detail kebab opens the same modal without hints, since the draft is not
+available in that context. `showHints` prop controls which variant renders.
+
 ---
 
-## Pending backend changes (required before Phase 6c)
+## Known limitations and deferred items
 
-**Desired state schema change** — add `manual_active BOOLEAN NOT NULL DEFAULT false`
-and `manual_mode TEXT` columns. Targets (`target_temp`, `target_hum`) persist
-independently of whether manual control is active. A user can have saved targets
-while control type is set to Schedule. The control loop derives effective mode from
-`manual_active` + expiry check rather than reading a `mode` column directly.
+**Target preservation when toggling capability off** — when the user is in Manual
++ AUTO mode and disables a capability (e.g. sets `tempEnabled = false`) then hits
+Apply, that target is sent as null and cleared in the database. Re-enabling the
+capability later requires re-entering the target. A proper fix would require
+storing enabled/disabled intent separately from the target value. Not worth the
+complexity for current project scope.
 
-**`useDesiredState(roomId)` hook** — `GET /rooms/:id/desired-state`. Required to
-pre-fill draft state in the control panel with real desired state values.
-
-**`ControlPanelShell` → `ControlPanel`** — replace placeholder `useState` values
-with real desired state data. Wire Apply → `PUT /rooms/:id/desired-state`. Wire
-Revert → reset draft to desired state values. Use `useEffect` to sync draft when
-desired state loads — `useState` only initialises once per mount.
+**Deferred to 6g:**
+- Loading skeletons across all pages
+- Empty states across all pages
+- Account Settings modal with full timezone picker (grouped by UTC offset, ~40
+  curated IANA entries with friendly labels — no external library needed)
+- `TimezonePrompt` dismiss key is not per-user (`cc-timezone-prompt-dismissed` in
+  localStorage) — acceptable for single-user self-hosted deployment

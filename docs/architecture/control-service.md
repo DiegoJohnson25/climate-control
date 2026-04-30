@@ -127,7 +127,7 @@ sources in priority order:
 
 | Priority | Condition | Source |
 |---|---|---|
-| 1 | Manual override active and not expired | `desired_states` — manual hold |
+| 1 | `manual_active = true` and `manual_override_until` not expired | `desired_states` — manual hold |
 | 2 | Active schedule period matches current day/time | `schedule_periods` |
 | 3 | Within 60s grace period after period end | Last active period |
 | 4 | None of the above | Mode OFF |
