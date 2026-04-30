@@ -770,3 +770,36 @@
 ::-webkit-scrollbar       { width: 10px; height: 10px; }
 ::-webkit-scrollbar-thumb { background: var(--cc-neutral-300); border-radius: 999px; }
 ::-webkit-scrollbar-track { background: transparent; }
+
+/* =============================================================================
+   Tooltip
+   ============================================================================= */
+
+.cc-tooltip {
+  position: relative;
+}
+
+.cc-tooltip[data-tooltip]:hover::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--cc-surface-2);
+  color: var(--cc-fg-2);
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-radius-sm);
+  padding: 5px 9px;
+  font-size: 11px;
+  font-family: var(--cc-font-sans);
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 10;
+  box-shadow: var(--cc-shadow-sm);
+}
+
+.cc-tooltip--right[data-tooltip]:hover::after {
+  left: auto;
+  right: 0;
+  transform: none;
+}
