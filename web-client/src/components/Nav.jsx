@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { Thermometer, Sun, Moon } from 'lucide-react'
 import { useAuth, getToken } from '../api/auth.jsx'
+import { useUser } from '@/hooks/useUser'
 
 // ---------------------------------------------------------------------------
 // Nav
@@ -13,6 +14,7 @@ import { useAuth, getToken } from '../api/auth.jsx'
 export default function Nav({ theme, toggleTheme }) {
   const { logout } = useAuth()
   const navigate = useNavigate()
+  const { user } = useUser()
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef(null)
 
@@ -150,16 +152,20 @@ export default function Nav({ theme, toggleTheme }) {
                 flexShrink: 0,
               }}
             >
-              U
+              {user?.email?.[0]?.toUpperCase() ?? 'U'}
             </div>
             <span
               style={{
                 fontFamily: 'var(--cc-font-mono)',
                 fontSize: 12,
                 color: 'var(--cc-fg-2)',
+                maxWidth: 160,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
               }}
             >
-              Account
+              {user?.email ?? 'Account'}
             </span>
           </button>
 
@@ -169,7 +175,7 @@ export default function Nav({ theme, toggleTheme }) {
               style={{ position: 'absolute', top: 'calc(100% + 6px)', right: 0, width: 200 }}
             >
               <div style={{ padding: '8px 10px 10px' }}>
-                <div className="cc-meta">Signed in</div>
+                <div className="cc-meta">{user?.email ?? 'Signed in'}</div>
               </div>
               <hr />
               <button
@@ -178,10 +184,10 @@ export default function Nav({ theme, toggleTheme }) {
                   // TODO Phase 6g: open AccountSettingsModal
                 }}
               >
-                Account settings
+                Account Settings
               </button>
               <hr />
-              <button onClick={handleLogout}>Log out</button>
+              <button onClick={handleLogout}>Log Out</button>
             </div>
           )}
         </div>

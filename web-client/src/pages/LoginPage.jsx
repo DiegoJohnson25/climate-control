@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { Eye, EyeOff } from 'lucide-react'
 import { useAuth } from '../api/auth.jsx'
 
 // ---------------------------------------------------------------------------
@@ -14,6 +15,7 @@ export default function LoginPage() {
   const navigate = useNavigate()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState(null)
   const [loading, setLoading] = useState(false)
 
@@ -88,14 +90,31 @@ export default function LoginPage() {
 
             <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               <span className="cc-label">Password</span>
-              <input
-                className="cc-input"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                onKeyDown={handleKeyDown}
-                autoComplete="current-password"
-              />
+              <div style={{ position: 'relative', width: '100%' }}>
+                <input
+                  className="cc-input"
+                  type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  autoComplete="current-password"
+                  style={{ paddingRight: 36 }}
+                />
+                <button
+                  type="button"
+                  className="cc-iconbtn"
+                  onClick={() => setShowPassword((v) => !v)}
+                  style={{
+                    position: 'absolute',
+                    right: 4,
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    color: 'var(--cc-fg-3)',
+                  }}
+                >
+                  {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+                </button>
+              </div>
             </label>
 
             {error && (
@@ -119,23 +138,9 @@ export default function LoginPage() {
               disabled={loading || !email.trim() || !password.trim()}
               style={{ marginTop: 6, height: 36 }}
             >
-              {loading ? 'Signing in…' : 'Sign in'}
+              {loading ? 'Signing in…' : 'Sign In'}
             </button>
           </div>
-        </div>
-
-        <div
-          style={{
-            marginTop: 16,
-            padding: '10px 14px',
-            fontFamily: 'var(--cc-font-mono)',
-            fontSize: 11,
-            color: 'var(--cc-fg-3)',
-            textAlign: 'center',
-            lineHeight: 1.5,
-          }}
-        >
-          dev build · seed credentials active
         </div>
 
         <div

@@ -119,7 +119,7 @@ export default function TimezonePrompt({ userTimezone, onSave }) {
           onClick={handleSave}
           disabled={saving || selected === userTimezone}
         >
-          {saving ? 'Saving…' : 'Save timezone'}
+          {saving ? 'Saving…' : 'Save Timezone'}
         </button>
       </div>
 
