@@ -63,8 +63,8 @@ type effectiveState struct {
 // walking the priority chain: manual override → active schedule period →
 // grace period → off. rc.Mu must be held for reading by the caller.
 func resolveEffectiveState(rc *cache.RoomCache, now time.Time) effectiveState {
-	// manual override: non-null and not expired
-	if rc.DesiredState.ManualOverrideUntil != nil {
+	// manual override: manual_active set, non-null, and not expired
+	if rc.DesiredState.ManualActive && rc.DesiredState.ManualOverrideUntil != nil {
 		if rc.DesiredState.ManualOverrideUntil.After(now) {
 			return effectiveState{
 				mode:    rc.DesiredState.Mode,

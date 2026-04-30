@@ -214,6 +214,7 @@ func (c *Client) UpdateDesiredState(token, roomID string, targetTemp, targetHum 
 	overrideUntil := "indefinite"
 	body := map[string]any{
 		"mode":                  "AUTO",
+		"manual_active":         true,
 		"manual_override_until": overrideUntil,
 		"target_temp":           targetTemp,
 		"target_hum":            targetHum,
