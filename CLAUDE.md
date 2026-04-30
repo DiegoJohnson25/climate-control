@@ -46,8 +46,9 @@ The project serves as a portfolio piece demonstrating distributed systems design
 - Phase docs ✅ — UI/UX mockup, README, full architecture docs overhaul, diagram specifications
 - Phase 6a ✅ — Vite scaffold, design tokens, auth flow, routing, Nav, login/register pages, SWR fetcher, dark mode
 - Phase 6b ✅ — Dashboard, room cards, room detail shell, overview tab, useUser/useRoom/useRooms/useClimate/useSchedules hooks, rename/delete modals, PUT /users/me, room capabilities API
+- Phase 6c ✅ — manual_active schema migration, useDesiredState hook, fully wired control panel, tolerances modal, blur validation, capability toggles, CSS tooltips
+**Active branch:** `feat/client-history` — Phase 6d
 
-**Active branch:** `feat/client-control` — Phase 6c
 
 ---
 
@@ -61,7 +62,7 @@ The project serves as a portfolio piece demonstrating distributed systems design
 | docs | `feat/docs-and-mockup` | UI/UX mockup, README, architecture docs split (explanation + reference pairs), diagram specifications, naming convention updates | ✅ Done |
 | 6a | `feat/client-scaffold` | Vite project, routing, auth flow, JWT handling, persistent nav, SWR setup | ✅ Done |
 | 6b | `feat/client-rooms` | Dashboard room cards, room detail shell, overview tab (read-only), useUser hook, Nav email | ✅ Done |
-| 6c | `feat/client-control` | Desired state schema migration, full control panel wiring, Hold → Manual rename |
+| 6c | `feat/client-control` | manual_active schema migration, useDesiredState hook, fully wired control panel, tolerances modal, blur validation, capability toggles, CSS tooltips | ✅ Done |
 | 6d | `feat/client-history` | History tab — two stacked Recharts charts, window selector, duty cycle overlays |
 | 6e | `feat/client-schedules` | Schedules tab — schedule list, period accordion, period modal (clock + timeline modes) |
 | 6f | `feat/client-devices` | Room-scoped devices tab + global devices page, inline room assignment |
@@ -69,6 +70,7 @@ The project serves as a portfolio piece demonstrating distributed systems design
 | 7a | `feat/kafka-bridge` | Kafka Bridge service, Kafka cluster in docker-compose |
 | 7b | `feat/kafka-control-service` | Replace `mqtt.Source` with `kafka.Source`, partition ownership callbacks, `OwnsRoom()` real implementation, Kafka-routed cache invalidation |
 | 8 | `feat/ci-full` + `feat/docs` | Newman integration + smoke tests in CI, frontend build verification, architecture diagrams, README polish, one-command startup |
+
 
 **Beyond phase 8 (independent, no strict ordering):**
 - Grafana + Prometheus observability
@@ -508,9 +510,12 @@ devices or stale readings.
 - Every room always has exactly one row — created in same transaction as room
 - API Server writes when user makes direct control request
 - Control Service reads at each tick via `resolveEffectiveState` — never writes to desired_states
-- `manual_override_until = NULL` means scheduler controls the room
-- `manual_override_until = 9999-12-31T23:59:59Z` means indefinite override
-- API contract: client sends `"indefinite"`, timestamp string, or `null`
+- `manual_active = false` means scheduler controls the room; `manual_override_until` is always null in this state
+- `manual_active = true` + `manual_override_until = 9999-12-31T23:59:59Z` means indefinite override
+- `manual_active = true` + `manual_override_until = <timestamp>` means timed override (UI does not expose this yet)
+- API contract: client sends `"indefinite"`, RFC3339 timestamp string, or `null` for `manual_override_until`
+- `mode` stores the configured manual preference — always `OFF` or `AUTO`, never null
+- `target_temp` / `target_hum` persist independently of `manual_active` and `mode` — represent saved user preferences even when manual control is inactive. Only nulled when user explicitly disables that capability toggle in the control panel.
 - `desired_states.id` is vestigial — `room_id` is the natural PK but migration not worth it
 - Default deadbands set in `room.Service.Create` as named constants — not in DB migration:
   `defaultTempDeadband = 0.5` and `defaultHumDeadband = 2.0`
@@ -525,9 +530,9 @@ and never persisted.
 
 | Priority | Condition | Source |
 |---|---|---|
-| 1 | Manual override active and not expired | `desired_states` — `manual_active = true`, `manual_override_until` in future |
-| 2 | Active schedule period matches current day/time | `schedule_periods` — active schedule, matching day and time window |
-| 3 | Within grace period of last period end | Last active period — up to 60s after period end |
+| 1 | `manual_active = true` and `manual_override_until` in future | `desired_states` — manual hold |
+| 2 | Active schedule period matches current day/time | `schedule_periods` |
+| 3 | Within 60s grace period after period end | Last active period |
 | 4 | None of the above | Mode OFF |
 
 ### Capability checks
@@ -969,6 +974,9 @@ of active tab. No nested routes under `/rooms/:id`.
 - `useRoom(roomId)` — `GET /rooms/:id`, no polling, exposes `mutate`
 - `useClimate(roomId)` — `GET /rooms/:id/climate`, 30s polling, custom
   fetcher handles 204 as null (valid no-data state)
+- `useDesiredState(roomId)` — `GET /rooms/:id/desired-state`, no polling,
+  `revalidateOnFocus: false` — prevents draft clobber on tab-away. Exposes
+  `mutate` — called after Apply to sync hook with newly saved state.
 - `useSchedules(roomId)` — `GET /rooms/:id/schedules`, no polling
 
 **Capability-aware rendering:**
@@ -999,16 +1007,53 @@ whitespace.
 - `none` → source row shows "None" in muted style, no badge variant
 
 **Control panel design (OverviewTab card 2):**
+**Control panel design (OverviewTab card 2):**
 Two top-level states driven by "Control type" segmented control:
 - "Schedule" — schedule section active, manual settings section greyed
-- "Manual" — manual settings active, schedule section shows "Overridden
-  by manual"
+- "Manual" — manual settings active, schedule section shows "Overridden by manual"
 Mode (OFF/AUTO) and capability rows are subordinate to Control type.
-Capability rows use `cc-togdot`, `cc-input cc-input--mono`, and
-`cc-dbpill` to visually imply interactivity even in the 6b shell.
-Apply/Revert buttons disabled in 6b shell — wired in 6c.
-Draft state initialised from placeholder values in 6b — replaced with
-real desired state data in 6c after schema migration.
+Each capability row has an independent enable/disable toggle (`cc-togdot`).
+The togdot has three visual states:
+- `cc-togdot--disabled` — grey, not clickable (hardware unavailable, not in manual+auto)
+- base `cc-togdot` — white/neutral, clickable (available but user chose not to regulate)
+- `cc-togdot--on` — active color, clickable (available and actively regulating)
+Togdot and content opacity are independent — the togdot is never dimmed by its
+surrounding row's opacity, preserving its affordance as an interactive control.
+
+`isDirty` gate: Apply and Revert only enabled when draft differs from saved
+desired state. Apply button style reflects dirty state (`cc-btn--primary` when
+dirty, `cc-btn--ghost` when clean).
+
+Draft state initialised from `useDesiredState` via `useEffect` on
+`[desiredState]` dep. `revalidateOnFocus: false` prevents SWR revalidation on
+tab-away from clobbering unsaved edits.
+
+Apply payload only nulls targets when capability toggle is explicitly off —
+not when switching control type or mode. This preserves saved preferences across
+state transitions.
+
+Blur validation on target inputs: 5–40°C temperature, 10–90% humidity.
+Blur validation on tolerance inputs: 0.1–10.0°C, 0.5–20.0%.
+Red border + error message on invalid blur. Apply blocked if errors present.
+
+CSS tooltips explain disabled states:
+- `cc-tooltip` — `::after` pseudo-element anchored above element, centered
+- `cc-tooltip--right` — right-edge anchor modifier for right-aligned controls
+**Tolerances modal:**
+- Accessible from dbpills in control panel (`showHints={true}` — threshold hints
+  computed from live draft targets)
+- Accessible from room detail kebab "Edit tolerances" (`showHints={false}`)
+- Title: "Tolerances". Subtitle: "Wider tolerances save energy but allow more drift."
+- `onSave` calls `PUT /rooms/:id` with full room body. Callers handle fetch
+  and `mutateRoom()` independently.
+- Deadband pills display `room.deadband_temp`/`room.deadband_hum` (not climate
+  snapshot) — updates immediately after save via `mutateRoom()`.
+Uncontrolled inputs use `useRef` reset counter (`resetCount`) for stable cursor
+behaviour. `resetCount.current` incremented on Revert and `useEffect` reinit.
+
+**Known limitation:** when the user disables a capability toggle in Manual+AUTO
+mode and hits Apply, that target is nulled in the database. Re-enabling the toggle
+later requires re-entering the target. See `future-features.md` for full note.
 
 **Button conventions:**
 - Title case throughout: "Add Room", "Delete Room", "Log Out",
@@ -1025,26 +1070,13 @@ real desired state data in 6c after schema migration.
 - Successful mutations call `mutate()` on relevant SWR hooks immediately
   — no waiting for next poll interval
 
-**Backend changes required before Phase 6c:**
-- Desired state schema migration: add `manual_active BOOLEAN NOT NULL
-  DEFAULT false` and `manual_mode TEXT` columns. Targets persist
-  independently of whether manual control is active. Control loop
-  derives mode from `manual_active` + expiry check.
-- `useDesiredState(roomId)` hook — `GET /rooms/:id/desired-state`
-- Replace `ControlPanelShell` placeholder useState values with real
-  desired state data. Wire Apply → `PUT /rooms/:id/desired-state`.
-  Wire Revert → reset draft to desired state values.
-- When replacing useState placeholders, use `useEffect` to sync draft
-  when desired state loads — `useState` only initialises once per mount.
-- Capability-aware greying in control panel rows (no heater → temp row
-  greyed regardless of mode).
-
 **Deferred to 6g:**
-- Timezone picker in Account Settings modal (full curated IANA selector
-  with friendly labels grouped by UTC offset — ~40 entries, no external
-  library needed).
-- Loading skeletons across all pages.
-- Empty states across all pages.
+- Account Settings modal with timezone picker (full curated IANA selector,
+  ~40 entries, no external library needed)
+- Loading skeletons across all pages
+- Empty states across all pages
+- TimezonePrompt dismiss key is not per-user — acceptable for single-user
+  self-hosted deployment
 
 ---
 

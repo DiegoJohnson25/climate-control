@@ -96,6 +96,24 @@ type SchedulePeriodCache struct {
 }
 ```
 
+### DesiredStateCache
+
+```go
+type DesiredStateCache struct {
+    ManualActive         bool
+    ManualOverrideUntil *time.Time
+    Mode                string     // "OFF" | "AUTO"
+    TargetTemp          *float64
+    TargetHum           *float64
+}
+```
+
+`ManualActive` must be `true` for the manual override branch to activate in
+`resolveEffectiveState`. When false, the scheduler controls the room regardless of
+the other fields. `ManualOverrideUntil` is always nil when `ManualActive` is false.
+An indefinite override is represented as `ManualOverrideUntil = 9999-12-31T23:59:59Z`
+— always in the future, so the override never expires.
+
 ### DeviceCache
 
 ```go

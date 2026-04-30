@@ -35,9 +35,10 @@ type roomRequest struct {
 // string, or "indefinite". Gin's ShouldBindJSON leaves RawMessage nil when the
 // key is absent entirely; explicit null arrives as the literal bytes `null`.
 type updateDesiredStateRequest struct {
-	Mode       string   `json:"mode"            binding:"required,oneof=OFF AUTO"`
-	TargetTemp *float64 `json:"target_temp"`
-	TargetHum  *float64 `json:"target_hum"`
+	Mode         string   `json:"mode" binding:"required,oneof=OFF AUTO"`
+	ManualActive bool     `json:"manual_active"`
+	TargetTemp   *float64 `json:"target_temp"`
+	TargetHum    *float64 `json:"target_hum"`
 	// "indefinite", an RFC3339 string, or null (JSON null or key absent = clear override)
 	ManualOverride *string `json:"manual_override_until"`
 }
@@ -207,6 +208,7 @@ func (h *Handler) UpdateDesiredState(c *gin.Context) {
 
 	input := UpdateDesiredStateInput{
 		Mode:                req.Mode,
+		ManualActive:        req.ManualActive,
 		TargetTemp:          req.TargetTemp,
 		TargetHum:           req.TargetHum,
 		ManualOverrideUntil: overrideUntil,
@@ -217,6 +219,8 @@ func (h *Handler) UpdateDesiredState(c *gin.Context) {
 		switch {
 		case errors.Is(err, ErrNotFound):
 			c.JSON(http.StatusNotFound, gin.H{"error": ErrNotFound.Error()})
+		case errors.Is(err, ErrInvalidTarget):
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"error": ErrInvalidTarget.Error()})
 		case errors.Is(err, ErrInvalidState):
 			c.JSON(http.StatusUnprocessableEntity, gin.H{"error": ErrInvalidState.Error()})
 		case errors.Is(err, ErrNoCapability):
@@ -336,6 +340,7 @@ func desiredStateResponse(ds models.DesiredState) gin.H {
 		"id":                    ds.ID,
 		"room_id":               ds.RoomID,
 		"mode":                  ds.Mode,
+		"manual_active":         ds.ManualActive,
 		"target_temp":           ds.TargetTemp,
 		"target_hum":            ds.TargetHum,
 		"manual_override_until": ds.ManualOverrideUntil,

@@ -53,8 +53,8 @@ erDiagram
     desired_states {
         uuid id PK
         uuid room_id FK
+        string mode
         boolean manual_active
-        string manual_mode
         timestamp manual_override_until
         float target_temp
         float target_hum
@@ -128,7 +128,7 @@ erDiagram
 ## Schema notes
 
 **`desired_states` — one row per room, always**
-Created in the same transaction as the room. `room_id` is the natural primary key — `id` is vestigial. Targets (`target_temp`, `target_hum`) persist independently of whether Hold is active — a user can have saved targets while holding to OFF. `manual_override_until = NULL` means the schedule controls the room. `manual_override_until = 9999-12-31T23:59:59Z` means indefinite hold.
+Created in the same transaction as the room. `room_id` is the natural primary key — `id` is vestigial. Targets (`target_temp`, `target_hum`) persist independently of `manual_active` and `mode` — they represent saved preferences even when manual control is inactive. `manual_active = false` means the scheduler controls the room; `manual_override_until` is always null in this state. `manual_active = true` + `manual_override_until = 9999-12-31T23:59:59Z` means indefinite manual override. `manual_active = true` + `manual_override_until = <timestamp>` means timed manual override.
 
 **`devices.room_id` is nullable**
 A device exists independently of room assignment. Unassigned devices publish telemetry that the Control Service drops silently — no room context available.

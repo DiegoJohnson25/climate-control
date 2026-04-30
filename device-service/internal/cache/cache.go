@@ -24,6 +24,7 @@ type TimestampedReading struct {
 // Targets is keyed by sensor type: "temperature", "humidity".
 type DesiredStateCache struct {
 	Mode                string
+	ManualActive        bool
 	Targets             map[string]*float64 // sensor_type → target value
 	ManualOverrideUntil *time.Time
 }

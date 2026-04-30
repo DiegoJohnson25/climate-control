@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { ChevronLeft, Pencil, MoreVertical, X } from 'lucide-react'
 import { useRoom } from '@/hooks/useRoom'
+import TolerancesModal from '@/components/TolerancesModal'
 import { useRooms } from '@/hooks/useRooms'
 import OverviewTab from '@/pages/tabs/OverviewTab'
 import { getToken } from '@/api/auth.jsx'
@@ -79,6 +80,7 @@ export default function RoomDetailPage() {
   const [deleteLoading, setDeleteLoading] = useState(false)
   const [deleteError, setDeleteError] = useState(null)
 
+  const [deadbandOpen, setDeadbandOpen] = useState(false)
   const [kebabOpen, setKebabOpen] = useState(false)
   const kebabRef = useRef(null)
 
@@ -230,6 +232,9 @@ export default function RoomDetailPage() {
               >
                 Edit Name
               </button>
+              <button onClick={() => { setKebabOpen(false); setDeadbandOpen(true) }}>
+                Edit Tolerances
+              </button>
               <hr />
               <button
                 className="danger"
@@ -265,7 +270,7 @@ export default function RoomDetailPage() {
       </div>
 
       {/* Tab content */}
-      {tab === 'overview' && <OverviewTab roomId={roomId} />}
+      {tab === 'overview' && <OverviewTab roomId={roomId} capabilities={room?.capabilities ?? { temperature: false, humidity: false }} room={room} mutateRoom={mutateRoom} />}
       {tab === 'history' && (
         <div style={{ padding: '24px 0' }}>
           <p className="cc-body">History — coming in 6d</p>
@@ -329,6 +334,37 @@ export default function RoomDetailPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Tolerances modal */}
+      {deadbandOpen && (
+        <TolerancesModal
+          open={deadbandOpen}
+          onClose={() => setDeadbandOpen(false)}
+          room={room}
+          capabilities={room?.capabilities ?? { temperature: false, humidity: false }}
+          tempTarget={null}
+          humTarget={null}
+          showHints={false}
+          onSave={async ({ deadband_temp, deadband_hum }) => {
+            const res = await fetch(`/api/v1/rooms/${roomId}`, {
+              method: 'PUT',
+              credentials: 'include',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${getToken()}`,
+              },
+              body: JSON.stringify({
+                name: room.name,
+                deadband_temp,
+                deadband_hum,
+              }),
+            })
+            if (!res.ok) throw new Error(res.status)
+            await mutateRoom()
+            setDeadbandOpen(false)
+          }}
+        />
       )}
 
       {/* Delete modal */}

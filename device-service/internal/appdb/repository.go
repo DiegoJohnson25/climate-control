@@ -34,6 +34,7 @@ type roomRow struct {
 type desiredStateRow struct {
 	RoomID              uuid.UUID
 	Mode                string
+	ManualActive        bool
 	TargetTemp          *float64
 	TargetHum           *float64
 	ManualOverrideUntil *time.Time
@@ -313,7 +314,7 @@ func (r *Repository) fetchRooms(ctx context.Context, roomIDs []uuid.UUID) ([]roo
 func (r *Repository) fetchDesiredStates(ctx context.Context, roomIDs []uuid.UUID) ([]desiredStateRow, error) {
 	var rows []desiredStateRow
 	err := r.db.WithContext(ctx).Raw(`
-		SELECT room_id, mode, target_temp, target_hum, manual_override_until
+		SELECT room_id, mode, manual_active, target_temp, target_hum, manual_override_until
 		FROM desired_states
 		WHERE room_id IN ?
 	`, roomIDs).Scan(&rows).Error
@@ -382,7 +383,7 @@ func (r *Repository) fetchRoom(ctx context.Context, roomID uuid.UUID) (*roomRow,
 func (r *Repository) fetchDesiredState(ctx context.Context, roomID uuid.UUID) (desiredStateRow, error) {
 	var row desiredStateRow
 	err := r.db.WithContext(ctx).Raw(`
-		SELECT room_id, mode, target_temp, target_hum, manual_override_until
+		SELECT room_id, mode, manual_active, target_temp, target_hum, manual_override_until
 		FROM desired_states
 		WHERE room_id = ?
 	`, roomID).Scan(&row).Error
@@ -459,7 +460,8 @@ func buildRoomCache(
 		DeadbandTemp: rm.DeadbandTemp,
 		DeadbandHum:  rm.DeadbandHum,
 		DesiredState: cache.DesiredStateCache{
-			Mode: ds.Mode,
+			Mode:         ds.Mode,
+			ManualActive: ds.ManualActive,
 			Targets: map[string]*float64{
 				"temperature": ds.TargetTemp,
 				"humidity":    ds.TargetHum,
